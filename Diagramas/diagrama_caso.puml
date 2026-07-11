@@ -1,0 +1,37 @@
+@startuml Estagio_Supervisionado
+left to right direction
+
+actor Usuario
+actor Pagina_Web
+actor Aplicacao
+
+rectangle "Sistema de Processamento de Imagens" {
+    
+    ' Casos de Uso Principais (Gatilhos do Usuário ou Web)
+    (Acessar Aplicação) as UC_Acessar
+    (Realizar o upload da imagem) as UC_Upload
+    (Solicitar o download da imagem) as UC_Download
+    
+    ' Casos de Uso Internos/Secundários
+    (Processar imagem via algoritmo) as UC_Processar
+    (Exibir pré-visualização da imagem) as UC_Preview
+    (Enviar arquivo de download) as UC_EnviarArq
+    
+    ' Relacionamentos do Usuário e Página Web
+    Pagina_Web --> UC_Acessar
+    Usuario --> UC_Upload
+    Usuario --> UC_Download
+    
+    ' Aplicação como ator que executa as regras de negócio por trás
+    UC_Processar <-- Aplicacao
+    UC_EnviarArq <-- Aplicacao
+
+    ' Aplicando INCLUDE (seta pontilhada apontando para o que é obrigatório)
+    UC_Upload .> UC_Processar : <<include>>
+    UC_Download .> UC_EnviarArq : <<include>>
+    
+    ' Aplicando EXTEND (seta pontilhada apontando para o caso principal)
+    ' O preview estende o caso de uso de processar (acontece depois/se necessário)
+    UC_Preview .> UC_Processar : <<extend>>
+}
+@enduml

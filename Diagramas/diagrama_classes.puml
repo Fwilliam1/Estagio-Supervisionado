@@ -1,0 +1,61 @@
+@startuml Diagrama de Classe
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+
+class Usuario {
+  - id: Integer
+  - nome: String
+  - email: String
+  - senha_hash: String
+  + cadastrar(): void
+  + autenticar(): boolean
+}
+
+class Imagem {
+  - id: Integer
+  - nomeArquivo: String
+  - formato: String
+  - resolucao: String
+  - tamanho: Float
+  - dadosOriginal: Blob
+  - dadosProcessada: Blob
+  + validarFormato(): boolean
+  + validarResolucao(): boolean
+}
+
+class Algoritmo {
+  - id: Integer
+  - tipo: String 
+  - parametros: String
+  + processar(imagemOriginal: Imagem): Imagem
+}
+
+class ControladorAplicacao {
+  + acessarAplicacao(): void
+  + realizarUpload(img: Imagem, usr: Usuario): void
+  + exibirPreVisualizacao(img: Imagem): void
+  + solicitarDownload(img: Imagem): void
+  + enviarArquivoDownload(img: Imagem): File
+}
+
+Usuario "1" -- "0..*" Imagem : realiza upload >
+Imagem "*" -- "1" Algoritmo : processada por >
+ControladorAplicacao ..> Usuario : gerencia requisições >
+ControladorAplicacao ..> Imagem : manipula >
+ControladorAplicacao ..> Algoritmo : aciona >
+
+note left of Usuario
+  Requisito RF3: Sistema de cadastro.
+  Requisito NRF2: Criptografia unidirecional (hash).
+end note
+
+note right of Imagem
+  Restrição R1: Formatos png, jpeg, jpg.
+  Restrição R2: Controle de resolução.
+end note
+
+note bottom of Algoritmo
+  Dehazing e Super-resolution.
+end note
+
+@enduml
