@@ -1,0 +1,42 @@
+@startuml Diagrama_ER
+skinparam shadowing false
+hide circle
+skinparam linetype ortho
+
+' Estilos visuais
+skinparam class {
+    BackgroundColor White
+    ArrowColor #2c3e50
+    BorderColor #2c3e50
+}
+
+entity "Usuario" as usuario {
+  id : Integer <<PK>>
+  nome : String
+  email : String
+  senha_hash : String
+}
+
+entity "Algoritmo" as algoritmo {
+  id : Integer <<PK>>
+  tipo : String 
+  parametros : String
+}
+
+entity "Imagem" as imagem {
+  id : Integer <<PK>>
+  usuario_id : Integer <<FK>>
+  algoritmo_id : Integer <<FK>>
+  nomeArquivo : String
+  formato : String
+  resolucao : String
+  tamanho : Float
+  dadosOriginal : Blob
+  dadosProcessada : Blob
+}
+
+' Relacionamentos corrigidos
+usuario ||--o{ imagem : "realiza upload >"
+algoritmo ||--o{ imagem : "processa >"
+
+@enduml
