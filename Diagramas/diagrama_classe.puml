@@ -1,4 +1,4 @@
-@startuml Diagrama de Classe
+@startuml 'Diagrama de classe'
 skinparam classAttributeIconSize 0
 skinparam shadowing false
 
