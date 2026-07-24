@@ -1,0 +1,7 @@
+<svg width="140" height="38" viewBox="0 0 140 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="38" height="38" rx="9" fill="#1E293B"/>
+  <path d="M11 19C11 14.5817 14.5817 11 19 11C23.4183 11 27 14.5817 27 19C27 23.4183 23.4183 27 19 27C16.5 27 14 25.5 12.5 23.5" stroke="#F06529" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="19" cy="19" r="3.5" fill="#F06529"/>
+  <text x="48" y="26" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-weight="800" font-size="20" fill="#1E293B" letter-spacing="-0.5">PAVIC</text>
+  <text x="110" y="26" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-weight="500" font-size="15" fill="#64748B">LAB</text>
+</svg>
