@@ -8,3 +8,6 @@ python manage.py runserver
 # ativar o react
 cd .\DehazeSuperR\
 npm run dev
+
+# inicializar/criar o banco de dados
+python setup_db.py
