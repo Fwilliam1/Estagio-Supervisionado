@@ -1,0 +1,10 @@
+# ativar a venv
+backend\venv\Scripts\activate
+
+# ativar django
+cd backend
+python manage.py runserver
+
+# ativar o react
+cd .\DehazeSuperR\
+npm run dev

@@ -1,8 +1,10 @@
 import { useState, useRef } from 'react'
 import pavicLogo from './assets/pavic_logo.jpg'
+import Login from './components/Login'
 import './App.css'
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [selectedAlgorithm, setSelectedAlgorithm] = useState('dehazing') // 'dehazing' | 'super-resolution'
   const [selectedFile, setSelectedFile] = useState(null)
   const [originalImageUrl, setOriginalImageUrl] = useState(null)
@@ -142,6 +144,10 @@ function App() {
     document.body.removeChild(link)
   }
 
+  if (!isAuthenticated) {
+    return <Login onLogin={() => setIsAuthenticated(true)} />
+  }
+
   return (
     <div className="app-container">
       {/* Top Header */}
@@ -149,9 +155,24 @@ function App() {
         <div className="logo-container">
           <img src={pavicLogo} className="pavic-logo-img" alt="PAVIC Lab Logo" />
         </div>
-        <div className="header-right">
-          <span className="header-tag">APLICAÇÃO</span>
-          <span className="header-app-name">Dehazing & Super-Resolution</span>
+        <div className="header-right header-right-user">
+          <div>
+            <span className="header-tag">APLICAÇÃO</span>
+            <span className="header-app-name">Dehazing & Super-Resolution</span>
+          </div>
+          <button
+            type="button"
+            className="btn-logout"
+            onClick={() => setIsAuthenticated(false)}
+            title="Sair da aplicação"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            Sair
+          </button>
         </div>
       </header>
 
