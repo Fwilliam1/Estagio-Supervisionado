@@ -244,7 +244,12 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
                 <button
                   type="button"
                   className="btn-cadastro-submit"
-                  onClick={onRegisterSuccess}
+                  onClick={() =>
+                    onRegisterSuccess({
+                      name: formData.name.trim() || formData.email.split('@')[0],
+                      email: formData.email.trim(),
+                    })
+                  }
                 >
                   <span>Acessar plataforma agora</span>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

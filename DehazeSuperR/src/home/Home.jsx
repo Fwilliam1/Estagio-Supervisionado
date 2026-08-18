@@ -1,16 +1,194 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import pavicLogo from '../assets/pavic_logo.jpg'
+import { getUserHistory, saveHistoryItem } from '../utils/historyStorage'
 import './Home.css'
 
-export default function Home({ onLogout }) {
-  const [selectedAlgorithm, setSelectedAlgorithm] = useState('dehazing') // 'dehazing' | 'super-resolution'
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [originalImageUrl, setOriginalImageUrl] = useState(null)
+export default function Home({
+  currentUser,
+  onLogout,
+  onNavigateToHistory,
+  pendingHistoryItem,
+  onClearPendingHistoryItem,
+}) {
+  const [selectedAlgorithm, setSelectedAlgorithm] = useState(
+    () => pendingHistoryItem?.process || 'dehazing'
+  )
+  const [selectedFile, setSelectedFile] = useState(() =>
+    pendingHistoryItem
+      ? {
+          name: pendingHistoryItem.fileName || 'imagem_historico.png',
+          size:
+            pendingHistoryItem.fileSizeInBytes ||
+            pendingHistoryItem.fileSize ||
+            '1.0 MB',
+        }
+      : null
+  )
+  const [originalImageUrl, setOriginalImageUrl] = useState(
+    () => pendingHistoryItem?.inputImage || null
+  )
   const [processedImageUrl, setProcessedImageUrl] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [toastMessage, setToastMessage] = useState(() =>
+    pendingHistoryItem
+      ? `Imagem "${
+          pendingHistoryItem.fileName || 'selecionada'
+        }" carregada do histórico e reenviada para processamento!`
+      : null
+  )
+  const [historyCount, setHistoryCount] = useState(() => {
+    return getUserHistory(currentUser?.email).length
+  })
 
   const fileInputRef = useRef(null)
+
+  // Atualiza a contagem de itens no histórico
+  const refreshHistoryCount = useCallback(() => {
+    if (currentUser?.email) {
+      setHistoryCount(getUserHistory(currentUser.email).length)
+    }
+  }, [currentUser])
+
+  // Processamento da imagem via Canvas com Algoritmos de Visão Computacional
+  const executeProcessing = useCallback(
+    (inputSrc, algorithm, fileMeta = null) => {
+      if (!inputSrc || isProcessing) return
+
+      setIsProcessing(true)
+      setProcessedImageUrl(null)
+
+      const img = new Image()
+      img.crossOrigin = 'Anonymous'
+      img.src = inputSrc
+
+      img.onload = () => {
+        setTimeout(() => {
+          try {
+            const canvas = document.createElement('canvas')
+            const ctx = canvas.getContext('2d')
+
+            canvas.width = img.width
+            canvas.height = img.height
+
+            ctx.drawImage(img, 0, 0)
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            const data = imageData.data
+
+            if (algorithm === 'dehazing') {
+              // Dehazing Filter: Enhance contrast, remove haze/fog layer, boost saturation
+              for (let i = 0; i < data.length; i += 4) {
+                let r = data[i]
+                let g = data[i + 1]
+                let b = data[i + 2]
+
+                // Calculate lightness/haze level
+                const minChannel = Math.min(r, g, b)
+                const hazeEstimate = minChannel * 0.45
+
+                // Remove haze and restore contrast
+                r = Math.min(255, Math.max(0, (r - hazeEstimate) * 1.25))
+                g = Math.min(255, Math.max(0, (g - hazeEstimate) * 1.25))
+                b = Math.min(255, Math.max(0, (b - hazeEstimate) * 1.25))
+
+                // Saturation boost for restored haze colors
+                const avg = (r + g + b) / 3
+                data[i] = Math.min(255, Math.max(0, avg + (r - avg) * 1.15))
+                data[i + 1] = Math.min(255, Math.max(0, avg + (g - avg) * 1.15))
+                data[i + 2] = Math.min(255, Math.max(0, avg + (b - avg) * 1.15))
+              }
+            } else {
+              // Super-Resolution Filter: Unsharp mask / Detail enhancement filter
+              const width = canvas.width
+              const height = canvas.height
+              const copy = new Uint8ClampedArray(data)
+
+              // 3x3 Sharpen Kernel
+              for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                  const idx = (y * width + x) * 4
+                  for (let c = 0; c < 3; c++) {
+                    const top = ((y - 1) * width + x) * 4 + c
+                    const bottom = ((y + 1) * width + x) * 4 + c
+                    const left = (y * width + (x - 1)) * 4 + c
+                    const right = (y * width + (x + 1)) * 4 + c
+
+                    const val =
+                      5 * copy[idx + c] -
+                      copy[top] -
+                      copy[bottom] -
+                      copy[left] -
+                      copy[right]
+                    data[idx + c] = Math.min(255, Math.max(0, val))
+                  }
+                }
+              }
+            }
+
+            ctx.putImageData(imageData, 0, 0)
+            const resultDataUrl = canvas.toDataURL('image/png')
+            setProcessedImageUrl(resultDataUrl)
+            setIsProcessing(false)
+
+            // Salva a imagem no histórico individual do usuário
+            if (currentUser?.email) {
+              const currentMeta = fileMeta || selectedFile
+              const fileSizeFormatted = currentMeta?.size
+                ? typeof currentMeta.size === 'number'
+                  ? `${(currentMeta.size / (1024 * 1024)).toFixed(2)} MB`
+                  : currentMeta.size
+                : '1.0 MB'
+
+              saveHistoryItem(currentUser.email, {
+                inputImage: inputSrc,
+                processedImage: resultDataUrl,
+                process: algorithm,
+                fileName: currentMeta?.name || 'imagem_processada.png',
+                fileSize: fileSizeFormatted,
+                fileSizeInBytes:
+                  typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
+                dimensions: `${img.width}x${img.height} px`,
+              })
+
+              refreshHistoryCount()
+            }
+          } catch (err) {
+            console.error('Erro no processamento da imagem:', err)
+            setIsProcessing(false)
+          }
+        }, 600)
+      }
+
+      img.onerror = () => {
+        console.error('Erro ao carregar a imagem para processamento.')
+        setIsProcessing(false)
+      }
+    },
+    [isProcessing, currentUser, selectedFile, refreshHistoryCount]
+  )
+
+  // Quando o componente monta com item pendente do histórico, executa o reprocessamento
+  useEffect(() => {
+    if (pendingHistoryItem) {
+      const timer = setTimeout(() => {
+        executeProcessing(
+          pendingHistoryItem.inputImage,
+          pendingHistoryItem.process || 'dehazing',
+          {
+            name: pendingHistoryItem.fileName,
+            size: pendingHistoryItem.fileSize,
+          }
+        )
+      }, 50)
+
+      if (onClearPendingHistoryItem) {
+        onClearPendingHistoryItem()
+      }
+
+      return () => clearTimeout(timer)
+    }
+  }, [pendingHistoryItem, executeProcessing, onClearPendingHistoryItem])
 
   const handleFileChange = (file) => {
     if (!file) return
@@ -24,9 +202,12 @@ export default function Home({ onLogout }) {
     }
 
     setSelectedFile(file)
-    const url = URL.createObjectURL(file)
-    setOriginalImageUrl(url)
-    setProcessedImageUrl(null)
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      setOriginalImageUrl(e.target.result)
+      setProcessedImageUrl(null)
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleDragOver = (e) => {
@@ -57,79 +238,9 @@ export default function Home({ onLogout }) {
     }
   }
 
-  // Image Processing Handler using Canvas
-  const processImage = () => {
+  const handleProcessClick = () => {
     if (!originalImageUrl || isProcessing) return
-
-    setIsProcessing(true)
-
-    const img = new Image()
-    img.crossOrigin = 'Anonymous'
-    img.src = originalImageUrl
-
-    img.onload = () => {
-      setTimeout(() => {
-        const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d')
-
-        canvas.width = img.width
-        canvas.height = img.height
-
-        ctx.drawImage(img, 0, 0)
-
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const data = imageData.data
-
-        if (selectedAlgorithm === 'dehazing') {
-          // Dehazing Filter: Enhance contrast, remove haze/fog layer, boost saturation
-          for (let i = 0; i < data.length; i += 4) {
-            let r = data[i]
-            let g = data[i + 1]
-            let b = data[i + 2]
-
-            // Calculate lightness/haze level
-            const minChannel = Math.min(r, g, b)
-            const hazeEstimate = minChannel * 0.45
-
-            // Remove haze and restore contrast
-            r = Math.min(255, Math.max(0, (r - hazeEstimate) * 1.25))
-            g = Math.min(255, Math.max(0, (g - hazeEstimate) * 1.25))
-            b = Math.min(255, Math.max(0, (b - hazeEstimate) * 1.25))
-
-            // Slight saturation boost for restored haze colors
-            const avg = (r + g + b) / 3
-            data[i] = Math.min(255, Math.max(0, avg + (r - avg) * 1.15))
-            data[i + 1] = Math.min(255, Math.max(0, avg + (g - avg) * 1.15))
-            data[i + 2] = Math.min(255, Math.max(0, avg + (b - avg) * 1.15))
-          }
-        } else {
-          // Super-Resolution Filter: Unsharp mask / Detail enhancement filter
-          const width = canvas.width
-          const height = canvas.height
-          const copy = new Uint8ClampedArray(data)
-
-          // 3x3 Sharpen Kernel
-          for (let y = 1; y < height - 1; y++) {
-            for (let x = 1; x < width - 1; x++) {
-              const idx = (y * width + x) * 4
-              for (let c = 0; c < 3; c++) {
-                const top = ((y - 1) * width + x) * 4 + c
-                const bottom = ((y + 1) * width + x) * 4 + c
-                const left = (y * width + (x - 1)) * 4 + c
-                const right = (y * width + (x + 1)) * 4 + c
-
-                const val = 5 * copy[idx + c] - copy[top] - copy[bottom] - copy[left] - copy[right]
-                data[idx + c] = Math.min(255, Math.max(0, val))
-              }
-            }
-          }
-        }
-
-        ctx.putImageData(imageData, 0, 0)
-        setProcessedImageUrl(canvas.toDataURL('image/png'))
-        setIsProcessing(false)
-      }, 600)
-    }
+    executeProcessing(originalImageUrl, selectedAlgorithm, selectedFile)
   }
 
   const downloadProcessedImage = () => {
@@ -150,28 +261,107 @@ export default function Home({ onLogout }) {
           <img src={pavicLogo} className="pavic-logo-img" alt="PAVIC Lab Logo" />
         </div>
         <div className="header-right header-right-user">
-          <div>
-            <span className="header-tag">APLICAÇÃO</span>
-            <span className="header-app-name">Dehazing & Super-Resolution</span>
+          {/* User profile info */}
+          <div className="user-profile-badge">
+            <div className="user-avatar-circle">
+              {(currentUser?.name || currentUser?.email || 'U')
+                .charAt(0)
+                .toUpperCase()}
+            </div>
+            <div className="user-info-text">
+              <span className="header-tag">USUÁRIO</span>
+              <span className="header-app-name">
+                {currentUser?.name || currentUser?.email || 'Usuário'}
+              </span>
+            </div>
           </div>
-          <button
-            type="button"
-            className="btn-logout"
-            onClick={onLogout}
-            title="Sair da aplicação"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            Sair
-          </button>
+
+          <div className="header-action-group">
+            {/* Histórico Button */}
+            <button
+              type="button"
+              className="btn-history-nav"
+              onClick={onNavigateToHistory}
+              title="Acessar histórico de imagens"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 14 14" />
+              </svg>
+              <span>Histórico</span>
+              {historyCount > 0 && (
+                <span className="history-count-badge">{historyCount}</span>
+              )}
+            </button>
+
+            {/* Logout Button */}
+            <button
+              type="button"
+              className="btn-logout"
+              onClick={onLogout}
+              title="Sair da aplicação"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              Sair
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="main-content">
+        {/* Toast Alert Banner */}
+        {toastMessage && (
+          <div className="toast-banner success">
+            <div className="toast-content">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+              <span>{toastMessage}</span>
+            </div>
+            <button
+              type="button"
+              className="btn-close-toast"
+              onClick={() => setToastMessage(null)}
+              title="Fechar notificação"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Hero Section */}
         <section className="hero-section">
           <div className="category-tag">
@@ -182,7 +372,9 @@ export default function Home({ onLogout }) {
             Aprimore suas imagens com <span className="highlight">um clique.</span>
           </h1>
           <p className="hero-subtitle">
-            Escolha um algoritmo, envie sua imagem e faça o download do resultado. Todo o processamento ocorre a partir do seu dispositivo.
+            Escolha um algoritmo, envie sua imagem e faça o download do resultado.
+            Todo o processamento ocorre no seu dispositivo e fica salvo no seu
+            histórico individual.
           </p>
         </section>
 
@@ -192,12 +384,25 @@ export default function Home({ onLogout }) {
           <div className="algorithm-grid">
             {/* Card 1: Image Dehazing */}
             <div
-              className={`algorithm-card ${selectedAlgorithm === 'dehazing' ? 'selected' : ''}`}
+              className={`algorithm-card ${
+                selectedAlgorithm === 'dehazing' ? 'selected' : ''
+              }`}
               onClick={() => setSelectedAlgorithm('dehazing')}
             >
-              {selectedAlgorithm === 'dehazing' && <div className="card-dot"></div>}
+              {selectedAlgorithm === 'dehazing' && (
+                <div className="card-dot"></div>
+              )}
               <div className="card-icon-box dehazing">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M2 8c2.5-2 5.5-2 8 0s5.5 2 8 0" />
                   <path d="M2 13c2.5-2 5.5-2 8 0s5.5 2 8 0" />
                   <path d="M2 18c2.5-2 5.5-2 8 0s5.5 2 8 0" />
@@ -205,18 +410,34 @@ export default function Home({ onLogout }) {
               </div>
               <div className="card-content">
                 <h3>Image Dehazing</h3>
-                <p>Remove névoa, neblina e haze atmosférico, restaurando cor e contraste.</p>
+                <p>
+                  Remove névoa, neblina e haze atmosférico, restaurando cor e
+                  contraste.
+                </p>
               </div>
             </div>
 
             {/* Card 2: Super-Resolution */}
             <div
-              className={`algorithm-card ${selectedAlgorithm === 'super-resolution' ? 'selected' : ''}`}
+              className={`algorithm-card ${
+                selectedAlgorithm === 'super-resolution' ? 'selected' : ''
+              }`}
               onClick={() => setSelectedAlgorithm('super-resolution')}
             >
-              {selectedAlgorithm === 'super-resolution' && <div className="card-dot"></div>}
+              {selectedAlgorithm === 'super-resolution' && (
+                <div className="card-dot"></div>
+              )}
               <div className="card-icon-box super-resolution">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
                   <polyline points="7.5 4.21 12 6.81 16.5 4.21" />
                   <polyline points="7.5 19.79 7.5 14.6 3 12" />
@@ -227,7 +448,9 @@ export default function Home({ onLogout }) {
               </div>
               <div className="card-content">
                 <h3>Super-Resolution</h3>
-                <p>Aumenta a resolução da imagem preservando detalhes e nitidez.</p>
+                <p>
+                  Aumenta a resolução da imagem preservando detalhes e nitidez.
+                </p>
               </div>
             </div>
           </div>
@@ -247,22 +470,46 @@ export default function Home({ onLogout }) {
               type="file"
               ref={fileInputRef}
               accept="image/png, image/jpeg, image/jpg"
-              onChange={(e) => e.target.files && handleFileChange(e.target.files[0])}
+              onChange={(e) =>
+                e.target.files && handleFileChange(e.target.files[0])
+              }
             />
             <div className="upload-icon-circle">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
             </div>
-            <div className="upload-title">Arraste sua imagem ou clique para enviar</div>
+            <div className="upload-title">
+              Arraste sua imagem ou clique para enviar
+            </div>
             <div className="upload-subtitle">PNG, JPG ou JPEG · até 10MB</div>
 
             {selectedFile && (
               <div className="file-info-badge">
-                <span>📁 {selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)</span>
-                <button type="button" className="btn-remove-file" onClick={removeFile}>
+                <span>
+                  📁 {selectedFile.name}
+                  {typeof selectedFile.size === 'number'
+                    ? ` (${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)`
+                    : selectedFile.size
+                    ? ` (${selectedFile.size})`
+                    : ''}
+                </span>
+                <button
+                  type="button"
+                  className="btn-remove-file"
+                  onClick={removeFile}
+                >
                   Remover
                 </button>
               </div>
@@ -281,10 +528,23 @@ export default function Home({ onLogout }) {
               </div>
               <div className="preview-body">
                 {originalImageUrl ? (
-                  <img src={originalImageUrl} alt="Imagem original" className="preview-image" />
+                  <img
+                    src={originalImageUrl}
+                    alt="Imagem original"
+                    className="preview-image"
+                  />
                 ) : (
                   <div className="empty-placeholder">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      width="48"
+                      height="48"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
                       <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                       <circle cx="8.5" cy="8.5" r="1.5" />
                       <polyline points="21 15 16 10 5 21" />
@@ -299,19 +559,49 @@ export default function Home({ onLogout }) {
             <div className="preview-card">
               <div className="preview-header">
                 <span className="preview-header-title">RESULTADO</span>
-                {processedImageUrl && <span className="processed-badge">PROCESSADO</span>}
+                {processedImageUrl && (
+                  <span className="processed-badge">PROCESSADO</span>
+                )}
               </div>
               <div className="preview-body">
                 {isProcessing ? (
                   <div className="empty-placeholder">
-                    <div className="spinner" style={{ width: '28px', height: '28px', borderTopColor: '#F06529' }}></div>
-                    <p style={{ marginTop: '12px', color: '#F06529', fontWeight: 600 }}>Processando imagem...</p>
+                    <div
+                      className="spinner"
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderTopColor: '#F06529',
+                      }}
+                    ></div>
+                    <p
+                      style={{
+                        marginTop: '12px',
+                        color: '#F06529',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Processando imagem...
+                    </p>
                   </div>
                 ) : processedImageUrl ? (
-                  <img src={processedImageUrl} alt="Imagem processada" className="preview-image" />
+                  <img
+                    src={processedImageUrl}
+                    alt="Imagem processada"
+                    className="preview-image"
+                  />
                 ) : (
                   <div className="empty-placeholder">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      width="48"
+                      height="48"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
                       <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                       <circle cx="8.5" cy="8.5" r="1.5" />
                       <polyline points="21 15 16 10 5 21" />
@@ -326,13 +616,20 @@ export default function Home({ onLogout }) {
           {/* Bottom Control Bar */}
           <div className="actions-bar">
             <div className="selected-algo-info">
-              Algoritmo selecionado: <strong>{selectedAlgorithm === 'dehazing' ? 'Image Dehazing' : 'Super-Resolution'}</strong>
+              Algoritmo selecionado:{' '}
+              <strong>
+                {selectedAlgorithm === 'dehazing'
+                  ? 'Image Dehazing'
+                  : 'Super-Resolution'}
+              </strong>
             </div>
             <div className="action-buttons">
               <button
                 type="button"
-                className={`btn-process ${originalImageUrl ? 'active' : 'btn-disabled'} ${isProcessing ? 'processing' : ''}`}
-                onClick={processImage}
+                className={`btn-process ${
+                  originalImageUrl ? 'active' : 'btn-disabled'
+                } ${isProcessing ? 'processing' : ''}`}
+                onClick={handleProcessClick}
                 disabled={!originalImageUrl || isProcessing}
               >
                 {isProcessing ? (
@@ -341,7 +638,16 @@ export default function Home({ onLogout }) {
                   </>
                 ) : (
                   <>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
                       <line x1="5" y1="12" x2="19" y2="12" />
                       <polyline points="12 5 19 12 12 19" />
                     </svg>
@@ -352,11 +658,22 @@ export default function Home({ onLogout }) {
 
               <button
                 type="button"
-                className={`btn-download ${processedImageUrl ? 'ready' : 'btn-disabled'}`}
+                className={`btn-download ${
+                  processedImageUrl ? 'ready' : 'btn-disabled'
+                }`}
                 onClick={downloadProcessedImage}
                 disabled={!processedImageUrl}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                   <polyline points="7 10 12 15 17 10" />
                   <line x1="12" y1="15" x2="12" y2="3" />

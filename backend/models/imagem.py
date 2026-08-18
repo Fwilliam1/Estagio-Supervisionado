@@ -27,11 +27,13 @@ class Imagem(models.Model):
     tamanho = models.FloatField(verbose_name='Tamanho', help_text='Tamanho do arquivo em KB ou MB')
     dadosOriginal = models.BinaryField(db_column='dadosOriginal', verbose_name='Dados Original (Blob)')
     dadosProcessada = models.BinaryField(null=True, blank=True, db_column='dadosProcessada', verbose_name='Dados Processada (Blob)')
+    criado_em = models.DateTimeField(auto_now_add=True, null=True, blank=True, verbose_name='Criado em')
 
     class Meta:
         db_table = 'imagem'
         verbose_name = 'Imagem'
         verbose_name_plural = 'Imagens'
+        ordering = ['-id']
 
     def __str__(self):
         return f"{self.nomeArquivo} (ID: {self.id})"

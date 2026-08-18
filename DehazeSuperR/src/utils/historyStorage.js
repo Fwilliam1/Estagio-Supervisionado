@@ -1,0 +1,308 @@
+// Gerenciamento de Usuários e Histórico com Integração REST API (Django) e Fallback LocalStorage
+
+const API_BASE_URL = 'http://127.0.0.1:8000/api'
+const USERS_KEY = 'dsr_registered_users'
+const CURRENT_USER_KEY = 'dsr_current_session_user'
+const HISTORY_PREFIX = 'dsr_image_history_'
+
+// Usuário padrão inicial
+export const DEFAULT_USER = {
+  id: '1',
+  name: 'Administrador',
+  email: 'admin@dsr.com',
+}
+
+/**
+ * Obtém a lista de todos os usuários cadastrados localmente
+ */
+export function getRegisteredUsers() {
+  try {
+    const raw = localStorage.getItem(USERS_KEY)
+    if (!raw) {
+      const initialUsers = [DEFAULT_USER]
+      localStorage.setItem(USERS_KEY, JSON.stringify(initialUsers))
+      return initialUsers
+    }
+    return JSON.parse(raw)
+  } catch {
+    return [DEFAULT_USER]
+  }
+}
+
+/**
+ * Cadastra ou atualiza um usuário localmente
+ */
+export function registerUser(user) {
+  const users = getRegisteredUsers()
+  const existingIndex = users.findIndex(
+    (u) => u.email.toLowerCase() === user.email.toLowerCase()
+  )
+
+  const newUser = {
+    id: user.id || Date.now().toString(),
+    name: user.name || user.email.split('@')[0],
+    email: user.email.toLowerCase(),
+  }
+
+  if (existingIndex >= 0) {
+    users[existingIndex] = { ...users[existingIndex], ...newUser }
+  } else {
+    users.push(newUser)
+  }
+
+  localStorage.setItem(USERS_KEY, JSON.stringify(users))
+  return newUser
+}
+
+/**
+ * Obtém o usuário atualmente logado
+ */
+export function getCurrentUser() {
+  try {
+    const raw = localStorage.getItem(CURRENT_USER_KEY)
+    if (raw) {
+      return JSON.parse(raw)
+    }
+  } catch (e) {
+    console.error('Erro ao ler usuário atual:', e)
+  }
+  return DEFAULT_USER
+}
+
+/**
+ * Define o usuário atualmente logado
+ */
+export function setCurrentUser(user) {
+  if (!user) {
+    localStorage.removeItem(CURRENT_USER_KEY)
+    return
+  }
+  const normalizedUser = {
+    id: user.id || Date.now().toString(),
+    name: user.name || user.email.split('@')[0],
+    email: (user.email || 'usuario@dsr.com').toLowerCase(),
+  }
+  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(normalizedUser))
+  registerUser(normalizedUser)
+  return normalizedUser
+}
+
+/**
+ * Remove a sessão do usuário atual
+ */
+export function clearCurrentUser() {
+  localStorage.removeItem(CURRENT_USER_KEY)
+}
+
+/**
+ * Retorna o histórico de imagens armazenado no LocalStorage (síncrono)
+ */
+export function getUserHistory(userEmail) {
+  if (!userEmail) return []
+  try {
+    const key = `${HISTORY_PREFIX}${userEmail.toLowerCase()}`
+    const raw = localStorage.getItem(key)
+    if (!raw) return []
+    return JSON.parse(raw)
+  } catch (e) {
+    console.error('Erro ao buscar histórico do usuário:', e)
+    return []
+  }
+}
+
+/**
+ * Sincroniza e busca o histórico diretamente da REST API do Django
+ */
+export async function fetchUserHistoryFromApi(userEmail) {
+  if (!userEmail) return []
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/imagens/historico/?email=${encodeURIComponent(userEmail)}`
+    )
+    if (response.ok) {
+      const data = await response.json()
+      if (data.success && Array.isArray(data.history)) {
+        // Atualiza o cache local com os dados vindos do banco de dados
+        const key = `${HISTORY_PREFIX}${userEmail.toLowerCase()}`
+        localStorage.setItem(key, JSON.stringify(data.history))
+        return data.history
+      }
+    }
+  } catch (e) {
+    console.warn('Backend offline ou inacessível. Usando cache local:', e.message)
+  }
+  return getUserHistory(userEmail)
+}
+
+/**
+ * Salva uma nova imagem no histórico do usuário (Local + REST API Django)
+ */
+export async function saveHistoryItem(userEmail, item) {
+  if (!userEmail) return null
+
+  const key = `${HISTORY_PREFIX}${userEmail.toLowerCase()}`
+  const currentList = getUserHistory(userEmail)
+
+  const now = new Date()
+  const formattedDate = now.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+  const formattedTime = now.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+
+  const newItem = {
+    id: item.id || `hist_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    userEmail: userEmail.toLowerCase(),
+    date: item.date || formattedDate,
+    time: item.time || formattedTime,
+    timestamp: item.timestamp || Date.now(),
+    inputImage: item.inputImage, // Base64 dataURL da imagem original
+    processedImage: item.processedImage || null, // Base64 dataURL da imagem processada
+    process: item.process || 'dehazing',
+    processLabel:
+      item.process === 'super-resolution'
+        ? 'Super-Resolution'
+        : 'Image Dehazing',
+    fileName: item.fileName || 'imagem_upload.png',
+    fileSize: item.fileSize || '1.0 MB',
+    fileSizeInBytes: item.fileSizeInBytes || 0,
+    dimensions: item.dimensions || null,
+  }
+
+  // 1. Salva imediatamente no localStorage para responsividade instantânea
+  const updatedList = [newItem, ...currentList].slice(0, 30)
+  localStorage.setItem(key, JSON.stringify(updatedList))
+
+  // 2. Persiste na API REST / Banco de Dados Django em segundo plano
+  try {
+    const apiResponse = await fetch(`${API_BASE_URL}/imagens/salvar/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: userEmail,
+        inputImage: item.inputImage,
+        processedImage: item.processedImage,
+        process: item.process,
+        fileName: item.fileName,
+        fileSize: item.fileSize,
+        dimensions: item.dimensions,
+      }),
+    })
+
+    if (apiResponse.ok) {
+      const apiData = await apiResponse.json()
+      if (apiData.success && apiData.item) {
+        newItem.db_id = apiData.item.db_id
+      }
+    }
+  } catch (err) {
+    console.warn('Aviso: Não foi possível salvar na API REST (usando persistência local):', err.message)
+  }
+
+  return newItem
+}
+
+/**
+ * Remove um item do histórico do usuário (Local + REST API Django)
+ */
+export async function deleteHistoryItem(userEmail, itemId) {
+  if (!userEmail || !itemId) return []
+  const key = `${HISTORY_PREFIX}${userEmail.toLowerCase()}`
+  const currentList = getUserHistory(userEmail)
+  const itemToDelete = currentList.find((i) => i.id === itemId)
+
+  const updatedList = currentList.filter((item) => item.id !== itemId)
+  localStorage.setItem(key, JSON.stringify(updatedList))
+
+  // Se tiver ID de banco de dados, remove no Django
+  const dbId = itemToDelete?.db_id || (itemId.startsWith('db_') ? itemId.replace('db_', '') : null)
+  if (dbId) {
+    try {
+      await fetch(`${API_BASE_URL}/imagens/${dbId}/`, {
+        method: 'DELETE',
+      })
+    } catch (err) {
+      console.warn('Erro ao deletar no backend:', err.message)
+    }
+  }
+
+  return updatedList
+}
+
+/**
+ * Limpa todo o histórico de um usuário (Local + REST API Django)
+ */
+export async function clearUserHistory(userEmail) {
+  if (!userEmail) return
+  const key = `${HISTORY_PREFIX}${userEmail.toLowerCase()}`
+  localStorage.removeItem(key)
+
+  try {
+    await fetch(`${API_BASE_URL}/imagens/limpar/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: userEmail }),
+    })
+  } catch (err) {
+    console.warn('Erro ao limpar histórico no backend:', err.message)
+  }
+}
+
+/**
+ * Autenticação via REST API
+ */
+export async function loginWithApi(email, password) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/login/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (data.success && data.user) {
+        return setCurrentUser(data.user)
+      }
+    }
+  } catch (e) {
+    console.warn('Usando login offline:', e.message)
+  }
+  // Fallback offline
+  const userName = email.includes('@') ? email.split('@')[0] : email
+  return setCurrentUser({
+    email,
+    name: userName.charAt(0).toUpperCase() + userName.slice(1),
+  })
+}
+
+/**
+ * Cadastro via REST API
+ */
+export async function registerWithApi(name, email, password) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/cadastro/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (data.success && data.user) {
+        return setCurrentUser(data.user)
+      }
+    }
+  } catch (e) {
+    console.warn('Usando cadastro offline:', e.message)
+  }
+  // Fallback offline
+  return setCurrentUser({ name, email })
+}

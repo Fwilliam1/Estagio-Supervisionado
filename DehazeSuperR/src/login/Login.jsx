@@ -11,7 +11,14 @@ export default function Login({ onLogin, onNavigateToRegister }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    onLogin()
+    const userEmail = email.trim() || 'admin@dsr.com'
+    const userName = userEmail.includes('@')
+      ? userEmail.split('@')[0]
+      : userEmail
+    onLogin({
+      email: userEmail,
+      name: userName.charAt(0).toUpperCase() + userName.slice(1),
+    })
   }
 
   const handleForgotPasswordSubmit = (e) => {
