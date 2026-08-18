@@ -1,48 +1,47 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Login from './login/Login'
 import Cadastro from './cadastro/Cadastro'
 import Home from './home/Home'
-import Historico from './historico/Historico'
-import {
-  getCurrentUser,
-  setCurrentUser as saveCurrentUser,
-  clearCurrentUser,
-} from './utils/historyStorage'
+import { authApi } from './services/authApi'
 import './App.css'
 
 function App() {
-  const [currentPage, setCurrentPage] = useState('login') // 'login' | 'cadastro' | 'home' | 'historico'
-  const [currentUser, setCurrentUserState] = useState(() => getCurrentUser())
-  const [pendingHistoryItem, setPendingHistoryItem] = useState(null)
+  const [currentUser, setCurrentUser] = useState(() => authApi.getCurrentUser())
+  const [currentPage, setCurrentPage] = useState(() => {
+    return authApi.isAuthenticated() ? 'home' : 'login'
+  })
 
-  const handleLogin = (userData) => {
-    const user = saveCurrentUser(userData)
-    setCurrentUserState(user)
+  // Verifica se o token salvo ainda é válido no backend ao carregar o app
+  useEffect(() => {
+    if (authApi.isAuthenticated()) {
+      authApi.getMe().then((user) => {
+        if (user) {
+          setCurrentUser(user)
+        } else {
+          // Token expirado ou invalidado por outro login
+          setCurrentUser(null)
+          setCurrentPage('login')
+        }
+      })
+    }
+  }, [])
+
+  const handleLoginSuccess = (userData) => {
+    setCurrentUser(userData)
+    // Login -> Tela principal
     setCurrentPage('home')
   }
 
-  const handleRegister = (userData) => {
-    const user = saveCurrentUser(userData)
-    setCurrentUserState(user)
-    setCurrentPage('home')
-  }
-
-  const handleLogout = () => {
-    clearCurrentUser()
-    setCurrentUserState(null)
-    setPendingHistoryItem(null)
+  const handleLogout = async () => {
+    await authApi.logout()
+    setCurrentUser(null)
     setCurrentPage('login')
-  }
-
-  const handleSelectHistoryItem = (item) => {
-    setPendingHistoryItem(item)
-    setCurrentPage('home')
   }
 
   if (currentPage === 'login') {
     return (
       <Login
-        onLogin={handleLogin}
+        onLogin={handleLoginSuccess}
         onNavigateToRegister={() => setCurrentPage('cadastro')}
       />
     )
@@ -51,31 +50,15 @@ function App() {
   if (currentPage === 'cadastro') {
     return (
       <Cadastro
-        onRegisterSuccess={handleRegister}
         onNavigateToLogin={() => setCurrentPage('login')}
-      />
-    )
-  }
-
-  if (currentPage === 'historico') {
-    return (
-      <Historico
-        currentUser={currentUser}
-        onNavigateToHome={() => setCurrentPage('home')}
-        onSelectHistoryItem={handleSelectHistoryItem}
-        onLogout={handleLogout}
       />
     )
   }
 
   return (
     <Home
-      key={pendingHistoryItem ? pendingHistoryItem.id : 'home-default'}
       currentUser={currentUser}
       onLogout={handleLogout}
-      onNavigateToHistory={() => setCurrentPage('historico')}
-      pendingHistoryItem={pendingHistoryItem}
-      onClearPendingHistoryItem={() => setPendingHistoryItem(null)}
     />
   )
 }

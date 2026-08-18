@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import pavicLogo from '../assets/pavic_logo.jpg'
+import { authApi } from '../services/authApi'
 import './Login.css'
 
 export default function Login({ onLogin, onNavigateToRegister }) {
@@ -8,17 +9,33 @@ export default function Login({ onLogin, onNavigateToRegister }) {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    const userEmail = email.trim() || 'admin@dsr.com'
-    const userName = userEmail.includes('@')
-      ? userEmail.split('@')[0]
-      : userEmail
-    onLogin({
-      email: userEmail,
-      name: userName.charAt(0).toUpperCase() + userName.slice(1),
-    })
+    setErrorMessage('')
+
+    if (!email.trim()) {
+      setErrorMessage('Por favor, informe seu e-mail.')
+      return
+    }
+
+    if (!password) {
+      setErrorMessage('Por favor, informe sua senha.')
+      return
+    }
+
+    try {
+      setIsLoading(true)
+      const data = await authApi.login({ email, password })
+      // Login com sucesso -> navega para a Tela Principal
+      onLogin(data.dados)
+    } catch (error) {
+      setErrorMessage(error.message || 'Erro ao efetuar login.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleForgotPasswordSubmit = (e) => {
@@ -57,6 +74,18 @@ export default function Login({ onLogin, onNavigateToRegister }) {
                 </p>
               </div>
 
+              {/* Mensagem de Erro de Autenticação */}
+              {errorMessage && (
+                <div className="login-alert-error" role="alert">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
               <form onSubmit={handleSubmit} className="login-form">
                 {/* Campo E-mail */}
                 <div className="form-group">
@@ -76,7 +105,12 @@ export default function Login({ onLogin, onNavigateToRegister }) {
                       className="form-input"
                       placeholder="seu.email@exemplo.com"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value)
+                        if (errorMessage) setErrorMessage('')
+                      }}
+                      disabled={isLoading}
+                      required
                     />
                   </div>
                 </div>
@@ -99,13 +133,19 @@ export default function Login({ onLogin, onNavigateToRegister }) {
                       className="form-input"
                       placeholder="••••••••"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value)
+                        if (errorMessage) setErrorMessage('')
+                      }}
+                      disabled={isLoading}
+                      required
                     />
                     <button
                       type="button"
                       className="btn-toggle-password"
                       onClick={() => setShowPassword(!showPassword)}
                       title={showPassword ? "Ocultar senha" : "Exibir senha"}
+                      tabIndex={-1}
                     >
                       {showPassword ? (
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -114,7 +154,7 @@ export default function Login({ onLogin, onNavigateToRegister }) {
                         </svg>
                       ) : (
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z" />
                           <circle cx="12" cy="12" r="3" />
                         </svg>
                       )}
@@ -130,6 +170,7 @@ export default function Login({ onLogin, onNavigateToRegister }) {
                       checked={rememberMe}
                       onChange={(e) => setRememberMe(e.target.checked)}
                       className="custom-checkbox"
+                      disabled={isLoading}
                     />
                     <span>Lembrar de mim</span>
                   </label>
@@ -137,18 +178,32 @@ export default function Login({ onLogin, onNavigateToRegister }) {
                     type="button"
                     className="btn-forgot-password"
                     onClick={() => setView('forgot-password')}
+                    disabled={isLoading}
                   >
                     Esqueci a senha
                   </button>
                 </div>
 
                 {/* Botão de Entrar */}
-                <button type="submit" className="btn-login-submit">
-                  <span>Entrar</span>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                    <polyline points="12 5 19 12 12 19" />
-                  </svg>
+                <button
+                  type="submit"
+                  className="btn-login-submit"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="spinner" style={{ width: '18px', height: '18px', borderWidth: '2px', borderColor: '#ffffff', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
+                      <span>Entrando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Entrar</span>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                        <polyline points="12 5 19 12 12 19" />
+                      </svg>
+                    </>
+                  )}
                 </button>
 
                 {/* Divisor */}
@@ -161,6 +216,7 @@ export default function Login({ onLogin, onNavigateToRegister }) {
                   type="button"
                   className="btn-register-secondary"
                   onClick={onNavigateToRegister}
+                  disabled={isLoading}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -209,6 +265,7 @@ export default function Login({ onLogin, onNavigateToRegister }) {
                       placeholder="seu.email@exemplo.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      required
                     />
                   </div>
                 </div>
