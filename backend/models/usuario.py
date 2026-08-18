@@ -7,6 +7,7 @@ class Usuario(models.Model):
     nome = models.CharField(max_length=255)
     email = models.EmailField(max_length=255, unique=True)
     senha_hash = models.CharField(max_length=255)
+    token_versao = models.CharField(max_length=64, default='', blank=True, verbose_name='Versão do Token Ativo')
 
     class Meta:
         db_table = 'usuario'
