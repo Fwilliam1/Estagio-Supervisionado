@@ -1,16 +1,47 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Login from './login/Login'
 import Cadastro from './cadastro/Cadastro'
 import Home from './home/Home'
+import { authApi } from './services/authApi'
 import './App.css'
 
 function App() {
-  const [currentPage, setCurrentPage] = useState('login') // 'login' | 'cadastro' | 'home'
+  const [currentUser, setCurrentUser] = useState(() => authApi.getCurrentUser())
+  const [currentPage, setCurrentPage] = useState(() => {
+    return authApi.isAuthenticated() ? 'home' : 'login'
+  })
+
+  // Verifica se o token salvo ainda é válido no backend ao carregar o app
+  useEffect(() => {
+    if (authApi.isAuthenticated()) {
+      authApi.getMe().then((user) => {
+        if (user) {
+          setCurrentUser(user)
+        } else {
+          // Token expirado ou invalidado por outro login
+          setCurrentUser(null)
+          setCurrentPage('login')
+        }
+      })
+    }
+  }, [])
+
+  const handleLoginSuccess = (userData) => {
+    setCurrentUser(userData)
+    // Login -> Tela principal
+    setCurrentPage('home')
+  }
+
+  const handleLogout = async () => {
+    await authApi.logout()
+    setCurrentUser(null)
+    setCurrentPage('login')
+  }
 
   if (currentPage === 'login') {
     return (
       <Login
-        onLogin={() => setCurrentPage('home')}
+        onLogin={handleLoginSuccess}
         onNavigateToRegister={() => setCurrentPage('cadastro')}
       />
     )
@@ -19,7 +50,6 @@ function App() {
   if (currentPage === 'cadastro') {
     return (
       <Cadastro
-        onRegisterSuccess={() => setCurrentPage('home')}
         onNavigateToLogin={() => setCurrentPage('login')}
       />
     )
@@ -27,7 +57,8 @@ function App() {
 
   return (
     <Home
-      onLogout={() => setCurrentPage('login')}
+      currentUser={currentUser}
+      onLogout={handleLogout}
     />
   )
 }

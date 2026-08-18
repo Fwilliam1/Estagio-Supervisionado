@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import pavicLogo from '../assets/pavic_logo.jpg'
 import './Home.css'
 
-export default function Home({ onLogout }) {
+export default function Home({ currentUser, onLogout }) {
   const [selectedAlgorithm, setSelectedAlgorithm] = useState('dehazing') // 'dehazing' | 'super-resolution'
   const [selectedFile, setSelectedFile] = useState(null)
   const [originalImageUrl, setOriginalImageUrl] = useState(null)
@@ -150,6 +150,14 @@ export default function Home({ onLogout }) {
           <img src={pavicLogo} className="pavic-logo-img" alt="PAVIC Lab Logo" />
         </div>
         <div className="header-right header-right-user">
+          {currentUser && (
+            <div className="user-profile-tag" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '16px', fontSize: '13px', color: '#475569', fontWeight: 600 }}>
+              <span style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: '#f97316', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700 }}>
+                {currentUser.nome ? currentUser.nome.charAt(0).toUpperCase() : 'U'}
+              </span>
+              <span>{currentUser.nome || currentUser.email}</span>
+            </div>
+          )}
           <div>
             <span className="header-tag">APLICAÇÃO</span>
             <span className="header-app-name">Dehazing & Super-Resolution</span>

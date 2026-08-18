@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import pavicLogo from '../assets/pavic_logo.jpg'
+import { authApi } from '../services/authApi'
 import './Cadastro.css'
 
-export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
+export default function Cadastro({ onNavigateToLogin }) {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -13,6 +14,9 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  const [registeredName, setRegisteredName] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -20,11 +24,54 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
       ...prev,
       [name]: value,
     }))
+    if (errorMessage) {
+      setErrorMessage('')
+    }
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    setIsSuccess(true)
+    setErrorMessage('')
+
+    // Validações básicas de formulário
+    if (!formData.name.trim()) {
+      setErrorMessage('Por favor, informe seu nome completo.')
+      return
+    }
+    if (!formData.email.trim()) {
+      setErrorMessage('Por favor, informe seu e-mail.')
+      return
+    }
+    if (!formData.password) {
+      setErrorMessage('Por favor, defina uma senha.')
+      return
+    }
+    if (formData.password.length < 6) {
+      setErrorMessage('A senha deve ter no mínimo 6 caracteres.')
+      return
+    }
+    if (formData.password !== formData.confirmPassword) {
+      setErrorMessage('As senhas informadas não coincidem.')
+      return
+    }
+
+    try {
+      setIsLoading(true)
+      await authApi.cadastrar({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+      })
+
+      setRegisteredName(formData.name)
+      // Transiciona para a Tela de Feedback de Sucesso
+      setIsSuccess(true)
+    } catch (error) {
+      setErrorMessage(error.message || 'Erro ao realizar cadastro.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -44,6 +91,7 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
       <main className="main-content cadastro-main-content">
         <div className="cadastro-card-container">
           {!isSuccess ? (
+            /* Formulário de Cadastro */
             <div className="cadastro-card">
               <div className="cadastro-card-header">
                 <div className="category-tag">
@@ -57,6 +105,18 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
                   Preencha os campos abaixo para ter acesso às ferramentas de Visão Computacional.
                 </p>
               </div>
+
+              {/* Mensagem de Erro */}
+              {errorMessage && (
+                <div className="cadastro-alert-error" role="alert">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <span>{errorMessage}</span>
+                </div>
+              )}
 
               <form onSubmit={handleSubmit} className="cadastro-form">
                 {/* Nome Completo */}
@@ -79,6 +139,8 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
                       placeholder="Ex: João da Silva"
                       value={formData.name}
                       onChange={handleChange}
+                      disabled={isLoading}
+                      required
                     />
                   </div>
                 </div>
@@ -103,6 +165,8 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
                       placeholder="seu.email@exemplo.com"
                       value={formData.email}
                       onChange={handleChange}
+                      disabled={isLoading}
+                      required
                     />
                   </div>
                 </div>
@@ -129,12 +193,15 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
                         placeholder="••••••••"
                         value={formData.password}
                         onChange={handleChange}
+                        disabled={isLoading}
+                        required
                       />
                       <button
                         type="button"
                         className="btn-toggle-password"
                         onClick={() => setShowPassword(!showPassword)}
                         title={showPassword ? "Ocultar senha" : "Exibir senha"}
+                        tabIndex={-1}
                       >
                         {showPassword ? (
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -171,12 +238,15 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
                         placeholder="••••••••"
                         value={formData.confirmPassword}
                         onChange={handleChange}
+                        disabled={isLoading}
+                        required
                       />
                       <button
                         type="button"
                         className="btn-toggle-password"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                         title={showConfirmPassword ? "Ocultar confirmação" : "Exibir confirmação"}
+                        tabIndex={-1}
                       >
                         {showConfirmPassword ? (
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -195,12 +265,25 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
                 </div>
 
                 {/* Botão de Cadastro */}
-                <button type="submit" className="btn-cadastro-submit">
-                  <span>Criar minha conta</span>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                    <polyline points="12 5 19 12 12 19" />
-                  </svg>
+                <button
+                  type="submit"
+                  className="btn-cadastro-submit"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="spinner" style={{ width: '18px', height: '18px', borderWidth: '2px', borderColor: '#ffffff', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
+                      <span>Cadastrando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Criar minha conta</span>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                        <polyline points="12 5 19 12 12 19" />
+                      </svg>
+                    </>
+                  )}
                 </button>
 
                 {/* Divisor */}
@@ -213,6 +296,7 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
                   type="button"
                   className="btn-back-to-login"
                   onClick={onNavigateToLogin}
+                  disabled={isLoading}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="19" y1="12" x2="5" y2="12" />
@@ -223,7 +307,7 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
               </form>
             </div>
           ) : (
-            /* Tela de Sucesso */
+            /* Tela de Feedback de Sucesso: Cadastro -> Tela de feedback -> Tela de login */
             <div className="cadastro-card success-card">
               <div className="success-icon-circle">
                 <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -233,8 +317,8 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
               </div>
               <h2 className="cadastro-title">Cadastro realizado com sucesso!</h2>
               <p className="cadastro-subtitle">
-                {formData.name ? (
-                  <>Bem-vindo(a) ao PAVIC Lab, <strong>{formData.name}</strong>! Sua conta foi criada e está pronta para uso.</>
+                {registeredName ? (
+                  <>Bem-vindo(a) ao PAVIC Lab, <strong>{registeredName}</strong>! Sua conta foi criada e está pronta para uso.</>
                 ) : (
                   <>Bem-vindo(a) ao PAVIC Lab! Sua conta foi criada e está pronta para uso.</>
                 )}
@@ -244,21 +328,13 @@ export default function Cadastro({ onRegisterSuccess, onNavigateToLogin }) {
                 <button
                   type="button"
                   className="btn-cadastro-submit"
-                  onClick={onRegisterSuccess}
+                  onClick={onNavigateToLogin}
                 >
-                  <span>Acessar plataforma agora</span>
+                  <span>Ir para tela de login</span>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="5" y1="12" x2="19" y2="12" />
                     <polyline points="12 5 19 12 12 19" />
                   </svg>
-                </button>
-
-                <button
-                  type="button"
-                  className="btn-back-to-login"
-                  onClick={onNavigateToLogin}
-                >
-                  <span>Ir para tela de login</span>
                 </button>
               </div>
             </div>
