@@ -2,7 +2,7 @@ import { useState } from 'react'
 import pavicLogo from '../assets/pavic_logo.jpg'
 import './Login.css'
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, onNavigateToRegister }) {
   const [view, setView] = useState('login') // 'login' | 'forgot-password' | 'success-reset'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -11,7 +11,6 @@ export default function Login({ onLogin }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    // Como solicitado, não precisa de validação real agora.
     onLogin()
   }
 
@@ -22,7 +21,7 @@ export default function Login({ onLogin }) {
 
   return (
     <div className="app-container login-page-wrapper">
-      {/* Top Header matching App header */}
+      {/* Top Header */}
       <header className="app-header">
         <div className="logo-container">
           <img src={pavicLogo} className="pavic-logo-img" alt="PAVIC Lab Logo" />
@@ -144,6 +143,26 @@ export default function Login({ onLogin }) {
                     <polyline points="12 5 19 12 12 19" />
                   </svg>
                 </button>
+
+                {/* Divisor */}
+                <div className="login-divider">
+                  <span>ou</span>
+                </div>
+
+                {/* Botão de Cadastrar / Criar Conta */}
+                <button
+                  type="button"
+                  className="btn-register-secondary"
+                  onClick={onNavigateToRegister}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <line x1="19" y1="8" x2="19" y2="14" />
+                    <line x1="22" y1="11" x2="16" y2="11" />
+                  </svg>
+                  <span>Cadastrar nova conta</span>
+                </button>
               </form>
             </div>
           )}
@@ -236,7 +255,7 @@ export default function Login({ onLogin }) {
         </div>
       </main>
 
-      {/* Footer matching App footer */}
+      {/* Footer */}
       <footer className="app-footer">
         PAVIC Lab - Pesquisa Aplicada em Visão e Inteligência Computacional
       </footer>
