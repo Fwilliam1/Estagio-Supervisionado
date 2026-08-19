@@ -1,5 +1,5 @@
 from django.urls import path
-from . import usuario_controller, auth_controller
+from . import usuario_controller, auth_controller, processamento_controller
 
 urlpatterns = [
     # Endpoints de Autenticação / Login
@@ -17,4 +17,10 @@ urlpatterns = [
     # Endpoints do CRUD de Usuários
     path('usuarios/', usuario_controller.usuarios_collection, name='api_usuarios_collection'),
     path('usuarios/<int:usuario_id>/', usuario_controller.usuario_detail, name='api_usuario_detail'),
+
+    # Endpoints de Processamento de Imagens (Super-Resolução ESC)
+    path('processar/super-resolution/', processamento_controller.super_resolution_view, name='api_super_resolution'),
+    path('processar/', processamento_controller.super_resolution_view, name='api_processar'),
+    path('imagens/<int:imagem_id>/download/', processamento_controller.download_imagem_view, name='api_download_imagem'),
 ]
+

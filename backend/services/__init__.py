@@ -12,6 +12,7 @@ from .exceptions import (
 from .usuario_service import UsuarioService
 from .auth_service import AuthService
 from .jwt_service import JWTService
+from .super_resolution_service import SuperResolutionService
 
 __all__ = [
     'ServiceException',
@@ -26,5 +27,7 @@ __all__ = [
     'UsuarioService',
     'AuthService',
     'JWTService',
+    'SuperResolutionService',
 ]
+
 
