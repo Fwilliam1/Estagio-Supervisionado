@@ -1,5 +1,5 @@
 # ativar a venv
-backend\venv\Scripts\activate
+.\venv\Scripts\activate
 
 # ativar django
 cd backend

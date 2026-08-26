@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Login from './login/Login'
 import Cadastro from './cadastro/Cadastro'
 import Home from './home/Home'
+import Historico from './historico/Historico'
 import { authApi } from './services/authApi'
 import './App.css'
 
@@ -10,6 +11,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState(() => {
     return authApi.isAuthenticated() ? 'home' : 'login'
   })
+  const [pendingHistoryItem, setPendingHistoryItem] = useState(null)
 
   // Verifica se o token salvo ainda é válido no backend ao carregar o app
   useEffect(() => {
@@ -35,7 +37,13 @@ function App() {
   const handleLogout = async () => {
     await authApi.logout()
     setCurrentUser(null)
+    setPendingHistoryItem(null)
     setCurrentPage('login')
+  }
+
+  const handleSelectHistoryItem = (item) => {
+    setPendingHistoryItem(item)
+    setCurrentPage('home')
   }
 
   if (currentPage === 'login') {
@@ -55,12 +63,27 @@ function App() {
     )
   }
 
+  if (currentPage === 'historico') {
+    return (
+      <Historico
+        currentUser={currentUser}
+        onNavigateToHome={() => setCurrentPage('home')}
+        onSelectHistoryItem={handleSelectHistoryItem}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
   return (
     <Home
       currentUser={currentUser}
       onLogout={handleLogout}
+      onNavigateToHistory={() => setCurrentPage('historico')}
+      pendingHistoryItem={pendingHistoryItem}
+      onClearPendingHistoryItem={() => setPendingHistoryItem(null)}
     />
   )
 }
 
 export default App
+
