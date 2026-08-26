@@ -31,4 +31,3 @@ urlpatterns = [
     path('imagens/limpar/', history_views.limpar_historico_api, name='api_limpar_historico'),
 ]
 
-
