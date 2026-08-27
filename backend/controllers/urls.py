@@ -19,10 +19,14 @@ urlpatterns = [
     path('usuarios/', usuario_controller.usuarios_collection, name='api_usuarios_collection'),
     path('usuarios/<int:usuario_id>/', usuario_controller.usuario_detail, name='api_usuario_detail'),
 
-    # Endpoints de Processamento de Imagens (Super-Resolução ESC)
+    # Endpoints de Processamento de Imagens
+    path('processar/dehazing/', processamento_controller.dehazing_view, name='api_dehazing'),
+    path('processar/depth/', processamento_controller.depth_view, name='api_depth'),
     path('processar/super-resolution/', processamento_controller.super_resolution_view, name='api_super_resolution'),
-    path('processar/', processamento_controller.super_resolution_view, name='api_processar'),
+    path('processar/', processamento_controller.processamento_router_view, name='api_processar'),
     path('imagens/<int:imagem_id>/download/', processamento_controller.download_imagem_view, name='api_download_imagem'),
+
+
 
     # Endpoints de Histórico de Imagens
     path('imagens/historico/', history_views.historico_api, name='api_historico'),
