@@ -145,8 +145,34 @@ def historico_api(request):
             formatted_date = created_time.strftime("%d/%m/%Y")
             formatted_time = created_time.strftime("%H:%M:%S")
 
-            algo_tipo = img.algoritmo.tipo if img.algoritmo else 'dehazing'
-            algo_label = "Super-Resolution" if algo_tipo == 'super-resolution' else "Image Dehazing"
+            algo_tipo_raw = img.algoritmo.tipo if img.algoritmo else 'dehazing'
+            algo_params_raw = img.algoritmo.parametros if img.algoritmo else '{}'
+
+            # Determina se é Super-Resolution e qual a escala configurada na tabela algoritmo
+            scale = 2
+            if algo_params_raw:
+                try:
+                    params_dict = json.loads(algo_params_raw)
+                    if isinstance(params_dict, dict) and 'escala' in params_dict:
+                        scale = int(params_dict['escala'])
+                except Exception:
+                    pass
+
+            if 'X3' in algo_tipo_raw or 'x3' in algo_tipo_raw or '_3' in algo_tipo_raw:
+                scale = 3
+            elif 'X4' in algo_tipo_raw or 'x4' in algo_tipo_raw or '_4' in algo_tipo_raw:
+                scale = 4
+            elif 'X2' in algo_tipo_raw or 'x2' in algo_tipo_raw or '_2' in algo_tipo_raw:
+                scale = 2
+
+            is_sr = (
+                'super-resolution' in algo_tipo_raw.lower() or
+                'superresolution' in algo_tipo_raw.lower() or
+                'esc' in algo_tipo_raw.lower()
+            )
+
+            algo_tipo = 'super-resolution' if is_sr else 'dehazing'
+            algo_label = f"Super-Resolution (ESC {scale}x)" if is_sr else "Image Dehazing"
 
             file_size_formatted = f"{img.tamanho:.2f} MB" if img.tamanho else "1.0 MB"
 
@@ -160,6 +186,7 @@ def historico_api(request):
                 "inputImage": input_url,
                 "processedImage": processed_url,
                 "process": algo_tipo,
+                "scale": scale,
                 "processLabel": algo_label,
                 "fileName": img.nomeArquivo,
                 "fileSize": file_size_formatted,
@@ -188,6 +215,12 @@ def salvar_imagem_api(request):
         input_image_str = data.get('inputImage')
         processed_image_str = data.get('processedImage')
         process_type = data.get('process', 'dehazing')
+        scale = data.get('scale', 2)
+        try:
+            scale = int(scale)
+        except Exception:
+            scale = 2
+
         file_name = data.get('fileName', 'imagem_processada.png')
         file_size = data.get('fileSize', '1.0 MB')
         dimensions = data.get('dimensions', '1920x1080')
@@ -205,10 +238,18 @@ def salvar_imagem_api(request):
             defaults={'nome': email.split('@')[0].capitalize(), 'senha_hash': 'default'}
         )
 
-        # 2. Encontra ou cria o Algoritmo
+        # 2. Encontra ou cria o Algoritmo com seus parâmetros e escala
+        is_sr = process_type == 'super-resolution' or 'super-resolution' in str(process_type).lower()
+        if is_sr:
+            tipo_algo = f"ESC_SuperResolution_X{scale}"
+            params_algo = json.dumps({"modelo": "ESC", "escala": scale, "pesos": f"ESC_DIV2K_X{scale}.pth"})
+        else:
+            tipo_algo = "dehazing"
+            params_algo = json.dumps({"modelo": "CanvasFilter"})
+
         algoritmo, _ = Algoritmo.objects.get_or_create(
-            tipo=process_type,
-            defaults={'parametros': '{}'}
+            tipo=tipo_algo,
+            defaults={'parametros': params_algo}
         )
 
         # 3. Extrai os bytes das imagens
@@ -251,8 +292,9 @@ def salvar_imagem_api(request):
                 "date": created_time.strftime("%d/%m/%Y"),
                 "time": created_time.strftime("%H:%M:%S"),
                 "timestamp": int(created_time.timestamp() * 1000),
-                "process": process_type,
-                "processLabel": "Super-Resolution" if process_type == 'super-resolution' else "Image Dehazing",
+                "process": "super-resolution" if is_sr else "dehazing",
+                "scale": scale,
+                "processLabel": f"Super-Resolution (ESC {scale}x)" if is_sr else "Image Dehazing",
                 "fileName": imagem.nomeArquivo,
                 "fileSize": f"{imagem.tamanho:.2f} MB",
                 "dimensions": imagem.resolucao,
