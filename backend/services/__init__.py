@@ -13,6 +13,8 @@ from .usuario_service import UsuarioService
 from .auth_service import AuthService
 from .jwt_service import JWTService
 from .super_resolution_service import SuperResolutionService
+from .depth_service import DepthAnythingService
+from .dehazing_service import DehazingService
 
 __all__ = [
     'ServiceException',
@@ -28,6 +30,10 @@ __all__ = [
     'AuthService',
     'JWTService',
     'SuperResolutionService',
+    'DepthAnythingService',
+    'DehazingService',
 ]
+
+
 
 

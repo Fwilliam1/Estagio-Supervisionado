@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import pavicLogo from '../assets/pavic_logo.jpg'
 import { getUserHistory, saveHistoryItem } from '../utils/historyStorage'
+import { authApi } from '../services/authApi'
 import './Home.css'
 
 export default function Home({
@@ -60,61 +61,97 @@ export default function Home({
     selectedFileRef.current = selectedFile
   }, [selectedFile])
 
-  // Processamento da imagem via Canvas com Algoritmos de Visão Computacional
+  // Processamento da imagem via IA no Backend (Depth Anything V2 / ESC) ou Canvas Fallback
   const executeProcessing = useCallback(
-    (inputSrc, algorithm, fileMeta = null) => {
+    async (inputSrc, algorithm, fileMeta = null) => {
       if (!inputSrc) return
 
       setIsProcessing(true)
       setProcessedImageUrl(null)
 
-      const img = new Image()
-      img.crossOrigin = 'Anonymous'
-      img.src = inputSrc
+      const activeUser = currentUserRef.current
+      const currentMeta = fileMeta || selectedFileRef.current
+      const token = authApi.getToken()
 
-      img.onload = () => {
-        setTimeout(() => {
-          try {
+      let resultDataUrl = null
+      let imgWidth = 800
+      let imgHeight = 600
+
+      // 1. Tenta executar a inferência de IA no backend Django (Depth Anything V2 para Dehazing ou ESC para Super-Resolution)
+      try {
+        const endpoint =
+          algorithm === 'dehazing'
+            ? 'http://127.0.0.1:8000/api/processar/dehazing/'
+            : 'http://127.0.0.1:8000/api/processar/super-resolution/'
+
+        const headers = { 'Content-Type': 'application/json' }
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+
+        const payload = {
+          imagem_base64: inputSrc,
+          nome_arquivo: currentMeta?.name || 'imagem_upload.png',
+          algoritmo: algorithm,
+          encoder: 'vits',
+          grayscale: true,
+          scale: 2,
+        }
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data?.dados?.imagem_base64) {
+            resultDataUrl = data.dados.imagem_base64
+            imgWidth = data.dados.largura_processada || imgWidth
+            imgHeight = data.dados.altura_processada || imgHeight
+          }
+        }
+      } catch (backendErr) {
+        console.warn('Backend indisponível para IA no momento, utilizando processamento local:', backendErr.message)
+      }
+
+      // 2. Se a chamada ao backend não retornou imagem (ex: sem conexão), executa o fallback em Canvas
+      if (!resultDataUrl) {
+        resultDataUrl = await new Promise((resolve) => {
+          const img = new Image()
+          img.crossOrigin = 'Anonymous'
+          img.src = inputSrc
+          img.onload = () => {
+            imgWidth = img.width
+            imgHeight = img.height
             const canvas = document.createElement('canvas')
             const ctx = canvas.getContext('2d')
-
             canvas.width = img.width
             canvas.height = img.height
-
             ctx.drawImage(img, 0, 0)
-
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
             const data = imageData.data
 
             if (algorithm === 'dehazing') {
-              // Dehazing Filter: Enhance contrast, remove haze/fog layer, boost saturation
               for (let i = 0; i < data.length; i += 4) {
                 let r = data[i]
                 let g = data[i + 1]
                 let b = data[i + 2]
-
-                // Calculate lightness/haze level
                 const minChannel = Math.min(r, g, b)
                 const hazeEstimate = minChannel * 0.45
-
-                // Remove haze and restore contrast
                 r = Math.min(255, Math.max(0, (r - hazeEstimate) * 1.25))
                 g = Math.min(255, Math.max(0, (g - hazeEstimate) * 1.25))
                 b = Math.min(255, Math.max(0, (b - hazeEstimate) * 1.25))
-
-                // Saturation boost for restored haze colors
                 const avg = (r + g + b) / 3
                 data[i] = Math.min(255, Math.max(0, avg + (r - avg) * 1.15))
                 data[i + 1] = Math.min(255, Math.max(0, avg + (g - avg) * 1.15))
                 data[i + 2] = Math.min(255, Math.max(0, avg + (b - avg) * 1.15))
               }
             } else {
-              // Super-Resolution Filter: Unsharp mask / Detail enhancement filter
               const width = canvas.width
               const height = canvas.height
               const copy = new Uint8ClampedArray(data)
-
-              // 3x3 Sharpen Kernel
               for (let y = 1; y < height - 1; y++) {
                 for (let x = 1; x < width - 1; x++) {
                   const idx = (y * width + x) * 4
@@ -123,7 +160,6 @@ export default function Home({
                     const bottom = ((y + 1) * width + x) * 4 + c
                     const left = (y * width + (x - 1)) * 4 + c
                     const right = (y * width + (x + 1)) * 4 + c
-
                     const val =
                       5 * copy[idx + c] -
                       copy[top] -
@@ -135,50 +171,42 @@ export default function Home({
                 }
               }
             }
-
             ctx.putImageData(imageData, 0, 0)
-            const resultDataUrl = canvas.toDataURL('image/png')
-            setProcessedImageUrl(resultDataUrl)
-            setIsProcessing(false)
-
-            // Salva a imagem no histórico individual do usuário
-            const activeUser = currentUserRef.current
-            const activeEmail = activeUser?.email
-            if (activeEmail) {
-              const currentMeta = fileMeta || selectedFileRef.current
-              const fileSizeFormatted = currentMeta?.size
-                ? typeof currentMeta.size === 'number'
-                  ? `${(currentMeta.size / (1024 * 1024)).toFixed(2)} MB`
-                  : currentMeta.size
-                : '1.0 MB'
-
-              saveHistoryItem(activeEmail, {
-                inputImage: inputSrc,
-                processedImage: resultDataUrl,
-                process: algorithm,
-                fileName: currentMeta?.name || 'imagem_processada.png',
-                fileSize: fileSizeFormatted,
-                fileSizeInBytes:
-                  typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
-                dimensions: `${img.width}x${img.height} px`,
-              }).then(() => {
-                refreshHistoryCount()
-              })
-            }
-          } catch (err) {
-            console.error('Erro no processamento da imagem:', err)
-            setIsProcessing(false)
+            resolve(canvas.toDataURL('image/png'))
           }
-        }, 500)
+          img.onerror = () => resolve(null)
+        })
       }
 
-      img.onerror = (err) => {
-        console.error('Erro ao carregar a imagem para processamento:', err)
-        setIsProcessing(false)
+      setProcessedImageUrl(resultDataUrl)
+      setIsProcessing(false)
+
+      // 3. Salva no histórico individual do usuário
+      const activeEmail = activeUser?.email
+      if (activeEmail && resultDataUrl) {
+        const fileSizeFormatted = currentMeta?.size
+          ? typeof currentMeta.size === 'number'
+            ? `${(currentMeta.size / (1024 * 1024)).toFixed(2)} MB`
+            : currentMeta.size
+          : '1.0 MB'
+
+        saveHistoryItem(activeEmail, {
+          inputImage: inputSrc,
+          processedImage: resultDataUrl,
+          process: algorithm,
+          fileName: currentMeta?.name || 'imagem_processada.png',
+          fileSize: fileSizeFormatted,
+          fileSizeInBytes:
+            typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
+          dimensions: `${imgWidth}x${imgHeight} px`,
+        }).then(() => {
+          refreshHistoryCount()
+        })
       }
     },
     [refreshHistoryCount]
   )
+
 
   // Quando o componente recebe um item do histórico para reprocessamento
   useEffect(() => {
