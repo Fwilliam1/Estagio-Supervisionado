@@ -133,15 +133,24 @@ def historico_api(request):
         if not usuario:
             return JsonResponse({"success": True, "history": []})
 
-        imagens = Imagem.objects.filter(usuario=usuario).select_related('algoritmo')
+        imagens = Imagem.objects.filter(usuario=usuario).select_related('algoritmo').order_by('-id')
 
         history_list = []
+        seen_items = set()
+
         for img in imagens:
+            # Deduplicação defensiva contra múltiplos envios idênticos
+            created_ts = int(img.criado_em.timestamp()) if img.criado_em else 0
+            dedup_key = (img.nomeArquivo, img.algoritmo_id if img.algoritmo_id else 0, created_ts // 4)
+            if dedup_key in seen_items:
+                continue
+            seen_items.add(dedup_key)
+
             formato = img.formato or 'image/png'
             input_url = helper_bytes_to_data_url(img.dadosOriginal, formato)
             processed_url = helper_bytes_to_data_url(img.dadosProcessada, formato) if img.dadosProcessada else None
 
-            created_time = img.criado_em or timezone.now()
+            created_time = timezone.localtime(img.criado_em) if img.criado_em else timezone.localtime(timezone.now())
             formatted_date = created_time.strftime("%d/%m/%Y")
             formatted_time = created_time.strftime("%H:%M:%S")
 
@@ -182,7 +191,8 @@ def historico_api(request):
                 "userEmail": usuario.email,
                 "date": formatted_date,
                 "time": formatted_time,
-                "timestamp": int(created_time.timestamp() * 1000),
+                "timestamp": int(img.criado_em.timestamp() * 1000) if img.criado_em else int(created_time.timestamp() * 1000),
+                "iso_date": created_time.isoformat(),
                 "inputImage": input_url,
                 "processedImage": processed_url,
                 "process": algo_tipo,
@@ -238,25 +248,47 @@ def salvar_imagem_api(request):
             defaults={'nome': email.split('@')[0].capitalize(), 'senha_hash': 'default'}
         )
 
-        # 2. Encontra ou cria o Algoritmo com seus parâmetros e escala
+        # 2. Verifica se a mesma imagem acabou de ser gravada nos últimos 5 segundos para evitar duplicatas
+        recent_cutoff = timezone.now() - timezone.timedelta(seconds=5)
+        existing_img = Imagem.objects.filter(
+            usuario=usuario,
+            nomeArquivo=file_name,
+            criado_em__gte=recent_cutoff
+        ).order_by('-id').first()
+
+        if existing_img:
+            created_time = timezone.localtime(existing_img.criado_em) if existing_img.criado_em else timezone.localtime(timezone.now())
+            return JsonResponse({
+                "success": True,
+                "message": "Registro já existente.",
+                "item": {
+                    "id": f"db_{existing_img.id}",
+                    "db_id": existing_img.id,
+                    "date": created_time.strftime("%d/%m/%Y"),
+                    "time": created_time.strftime("%H:%M:%S"),
+                    "timestamp": int(existing_img.criado_em.timestamp() * 1000) if existing_img.criado_em else int(created_time.timestamp() * 1000),
+                }
+            })
+
+        # 3. Encontra ou cria o Algoritmo com seus parâmetros e escala
         is_sr = process_type == 'super-resolution' or 'super-resolution' in str(process_type).lower()
         if is_sr:
             tipo_algo = f"ESC_SuperResolution_X{scale}"
             params_algo = json.dumps({"modelo": "ESC", "escala": scale, "pesos": f"ESC_DIV2K_X{scale}.pth"})
         else:
             tipo_algo = "dehazing"
-            params_algo = json.dumps({"modelo": "CanvasFilter"})
+            params_algo = json.dumps({"modelo": "UDPNet_FSNet"})
 
         algoritmo, _ = Algoritmo.objects.get_or_create(
             tipo=tipo_algo,
             defaults={'parametros': params_algo}
         )
 
-        # 3. Extrai os bytes das imagens
+        # 4. Extrai os bytes das imagens
         dados_original = helper_data_url_to_bytes(input_image_str)
         dados_processada = helper_data_url_to_bytes(processed_image_str) if processed_image_str else None
 
-        # 4. Converte tamanho para float (MB)
+        # 5. Converte tamanho para float (MB)
         tamanho_mb = 1.0
         if isinstance(file_size, (int, float)):
             tamanho_mb = float(file_size) / (1024 * 1024)
@@ -269,7 +301,7 @@ def salvar_imagem_api(request):
             except Exception:
                 tamanho_mb = 1.0
 
-        # 5. Salva a Imagem no banco de dados
+        # 6. Salva a Imagem no banco de dados
         imagem = Imagem.objects.create(
             usuario=usuario,
             algoritmo=algoritmo,
@@ -281,7 +313,7 @@ def salvar_imagem_api(request):
             dadosProcessada=dados_processada,
         )
 
-        created_time = imagem.criado_em or timezone.now()
+        created_time = timezone.localtime(imagem.criado_em) if imagem.criado_em else timezone.localtime(timezone.now())
 
         return JsonResponse({
             "success": True,
@@ -291,7 +323,7 @@ def salvar_imagem_api(request):
                 "userEmail": usuario.email,
                 "date": created_time.strftime("%d/%m/%Y"),
                 "time": created_time.strftime("%H:%M:%S"),
-                "timestamp": int(created_time.timestamp() * 1000),
+                "timestamp": int(imagem.criado_em.timestamp() * 1000) if imagem.criado_em else int(created_time.timestamp() * 1000),
                 "process": "super-resolution" if is_sr else "dehazing",
                 "scale": scale,
                 "processLabel": f"Super-Resolution (ESC {scale}x)" if is_sr else "Image Dehazing",
@@ -302,6 +334,7 @@ def salvar_imagem_api(request):
         })
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)}, status=500)
+
 
 
 @csrf_exempt

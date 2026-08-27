@@ -8,12 +8,43 @@ import {
 } from '../utils/historyStorage'
 import './Historico.css'
 
+function formatItemDate(item) {
+  if (item?.timestamp) {
+    try {
+      return new Date(item.timestamp).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+    } catch {
+      // fallback
+    }
+  }
+  return item?.date || ''
+}
+
+function formatItemTime(item) {
+  if (item?.timestamp) {
+    try {
+      return new Date(item.timestamp).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    } catch {
+      // fallback
+    }
+  }
+  return item?.time || ''
+}
+
 export default function Historico({
   currentUser,
   onNavigateToHome,
   onSelectHistoryItem,
   onLogout,
 }) {
+
   const [historyList, setHistoryList] = useState(() =>
     getUserHistory(currentUser?.email)
   )
@@ -398,7 +429,7 @@ export default function Historico({
                         <line x1="3" y1="10" x2="21" y2="10" />
                       </svg>
                       <span>
-                        <strong>Data:</strong> {item.date}
+                        <strong>Data:</strong> {formatItemDate(item)}
                       </span>
                     </div>
 
@@ -415,12 +446,13 @@ export default function Historico({
                         strokeLinejoin="round"
                       >
                         <circle cx="12" cy="12" r="10" />
-                        <polyline points="12 6 12 12 16 14" />
+                        <polyline points="12 6 12 16 14" />
                       </svg>
                       <span>
-                        <strong>Hora:</strong> {item.time}
+                        <strong>Hora:</strong> {formatItemTime(item)}
                       </span>
                     </div>
+
 
                     {/* Tamanho */}
                     {item.fileSize && (

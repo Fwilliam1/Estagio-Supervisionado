@@ -105,6 +105,7 @@ export default function Home({
       let resultDataUrl = null
       let imgWidth = 800
       let imgHeight = 600
+      let createdImageId = null
 
       // 1. Tenta executar a inferência de IA no backend Django (Depth Anything V2 + UDPNet para Dehazing ou ESC para Super-Resolution)
       try {
@@ -139,6 +140,7 @@ export default function Home({
             resultDataUrl = data.dados.imagem_base64
             imgWidth = data.dados.largura_processada || imgWidth
             imgHeight = data.dados.altura_processada || imgHeight
+            createdImageId = data.dados.imagem_id || null
             setProcessMeta(data.dados)
           }
         }
@@ -221,6 +223,9 @@ export default function Home({
           : '1.0 MB'
 
         saveHistoryItem(activeEmail, {
+          db_id: createdImageId,
+          id: createdImageId ? `db_${createdImageId}` : undefined,
+          skipApiSave: Boolean(createdImageId),
           inputImage: inputSrc,
           processedImage: resultDataUrl,
           process: algorithm,
@@ -375,6 +380,9 @@ export default function Home({
           : '1.0 MB'
 
         saveHistoryItem(activeEmail, {
+          db_id: resultado?.dados?.imagem_id,
+          id: resultado?.dados?.imagem_id ? `db_${resultado.dados.imagem_id}` : undefined,
+          skipApiSave: Boolean(resultado?.dados?.imagem_id),
           inputImage: originalImageUrl,
           processedImage: resultado.dados.imagem_base64,
           process: selectedAlgorithm,
@@ -393,6 +401,7 @@ export default function Home({
       setIsProcessing(false)
     }
   }
+
 
 
   const downloadProcessedImage = () => {

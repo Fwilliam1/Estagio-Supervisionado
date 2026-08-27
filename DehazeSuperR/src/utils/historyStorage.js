@@ -122,10 +122,33 @@ export async function fetchUserHistoryFromApi(userEmail) {
     if (response.ok) {
       const data = await response.json()
       if (data.success && Array.isArray(data.history)) {
+        // Formata os campos date e time para o fuso horário exato do computador do usuário
+        const formattedHistory = data.history.map((item) => {
+          if (item.timestamp) {
+            const itemDate = new Date(item.timestamp)
+            const localDate = itemDate.toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })
+            const localTime = itemDate.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })
+            return {
+              ...item,
+              date: localDate,
+              time: localTime,
+            }
+          }
+          return item
+        })
+
         // Atualiza o cache local com os dados vindos do banco de dados
         const key = `${HISTORY_PREFIX}${userEmail.toLowerCase()}`
-        localStorage.setItem(key, JSON.stringify(data.history))
-        return data.history
+        localStorage.setItem(key, JSON.stringify(formattedHistory))
+        return formattedHistory
       }
     }
   } catch (e) {
@@ -162,11 +185,14 @@ export async function saveHistoryItem(userEmail, item) {
 
   const scale = item.scale ? Number(item.scale) : 2
 
+  const finalId = item.id || (item.db_id ? `db_${item.db_id}` : `hist_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`)
+
   const newItem = {
-    id: item.id || `hist_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    id: finalId,
+    db_id: item.db_id || null,
     userEmail: userEmail.toLowerCase(),
-    date: item.date || formattedDate,
-    time: item.time || formattedTime,
+    date: formattedDate,
+    time: formattedTime,
     timestamp: item.timestamp || Date.now(),
     inputImage: item.inputImage, // Base64 dataURL da imagem original
     processedImage: item.processedImage || null, // Base64 dataURL da imagem processada
@@ -181,11 +207,22 @@ export async function saveHistoryItem(userEmail, item) {
     dimensions: item.dimensions || null,
   }
 
-  // 1. Salva imediatamente no localStorage para responsividade instantânea
-  const updatedList = [newItem, ...currentList].slice(0, 30)
+  // 1. Deduplicação no LocalStorage: remove qualquer item pré-existente idêntico
+  const filteredList = currentList.filter(
+    (existing) =>
+      existing.id !== newItem.id &&
+      (!newItem.db_id || existing.db_id !== newItem.db_id)
+  )
+
+  const updatedList = [newItem, ...filteredList].slice(0, 50)
   localStorage.setItem(key, JSON.stringify(updatedList))
 
-  // 2. Persiste na API REST / Banco de Dados Django em segundo plano
+  // Se o item já foi gravado no banco durante a inferência na API, não faz POST redundante
+  if (item.skipApiSave || item.db_id) {
+    return newItem
+  }
+
+  // 2. Persiste na API REST / Banco de Dados Django em segundo plano apenas se não foi salvo pelo backend
   try {
     const apiResponse = await fetch(`${API_BASE_URL}/imagens/salvar/`, {
       method: 'POST',
@@ -208,6 +245,12 @@ export async function saveHistoryItem(userEmail, item) {
       const apiData = await apiResponse.json()
       if (apiData.success && apiData.item) {
         newItem.db_id = apiData.item.db_id
+        newItem.id = `db_${apiData.item.db_id}`
+        // Atualiza o item no LocalStorage com o db_id
+        const listWithDbId = getUserHistory(userEmail).map((it) =>
+          it.id === finalId ? { ...it, db_id: apiData.item.db_id, id: `db_${apiData.item.db_id}` } : it
+        )
+        localStorage.setItem(key, JSON.stringify(listWithDbId))
       }
     }
   } catch (err) {
@@ -216,6 +259,7 @@ export async function saveHistoryItem(userEmail, item) {
 
   return newItem
 }
+
 
 /**
  * Remove um item do histórico do usuário (Local + REST API Django)
