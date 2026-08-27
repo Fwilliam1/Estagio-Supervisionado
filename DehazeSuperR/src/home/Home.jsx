@@ -18,10 +18,21 @@ export default function Home({
   pendingHistoryItem,
   onClearPendingHistoryItem,
 }) {
-  const [selectedAlgorithm, setSelectedAlgorithm] = useState(
-    () => pendingHistoryItem?.process || 'dehazing'
-  )
-  const [scaleFactor, setScaleFactor] = useState(2) // 2 | 3 | 4
+  const [selectedAlgorithm, setSelectedAlgorithm] = useState(() => {
+    const raw = String(pendingHistoryItem?.process || '').toLowerCase()
+    const rawLabel = String(pendingHistoryItem?.processLabel || '').toLowerCase()
+    if (raw.includes('super-resolution') || raw.includes('esc') || rawLabel.includes('super-resolution')) {
+      return 'super-resolution'
+    }
+    return 'dehazing'
+  })
+  const [scaleFactor, setScaleFactor] = useState(() => {
+    if (pendingHistoryItem?.scale) return Number(pendingHistoryItem.scale)
+    const raw = String(pendingHistoryItem?.process || '') + ' ' + String(pendingHistoryItem?.processLabel || '')
+    if (raw.includes('X3') || raw.includes('3x') || raw.includes('_3')) return 3
+    if (raw.includes('X4') || raw.includes('4x') || raw.includes('_4')) return 4
+    return 2
+  })
   const [selectedFile, setSelectedFile] = useState(() =>
     pendingHistoryItem
       ? {
@@ -44,7 +55,12 @@ export default function Home({
     pendingHistoryItem
       ? `Imagem "${
           pendingHistoryItem.fileName || 'selecionada'
-        }" carregada do histórico e pronta para processamento!`
+        }" carregada com algoritmo "${
+          pendingHistoryItem.processLabel ||
+          (pendingHistoryItem.process === 'super-resolution'
+            ? 'Super-Resolução'
+            : 'Image Dehazing')
+        }" pré-selecionado!`
       : null
   )
   const [historyCount, setHistoryCount] = useState(() => {
@@ -75,7 +91,26 @@ export default function Home({
   useEffect(() => {
     if (pendingHistoryItem && pendingHistoryItem.inputImage) {
       const src = pendingHistoryItem.inputImage
-      const algo = pendingHistoryItem.process || 'dehazing'
+      const rawProcess = String(pendingHistoryItem.process || '').toLowerCase()
+      const rawLabel = String(pendingHistoryItem.processLabel || '').toLowerCase()
+      const isSR =
+        rawProcess.includes('super-resolution') ||
+        rawProcess.includes('esc') ||
+        rawLabel.includes('super-resolution')
+
+      const algo = isSR ? 'super-resolution' : 'dehazing'
+
+      let scale = 2
+      if (pendingHistoryItem.scale) {
+        scale = Number(pendingHistoryItem.scale)
+      } else if (rawProcess.includes('x3') || rawLabel.includes('3x') || rawProcess.includes('_3')) {
+        scale = 3
+      } else if (rawProcess.includes('x4') || rawLabel.includes('4x') || rawProcess.includes('_4')) {
+        scale = 4
+      } else if (rawProcess.includes('x2') || rawLabel.includes('2x') || rawProcess.includes('_2')) {
+        scale = 2
+      }
+
       const meta = {
         name: pendingHistoryItem.fileName || 'imagem_historico.png',
         size:
@@ -85,13 +120,14 @@ export default function Home({
       }
 
       setSelectedAlgorithm(algo)
+      setScaleFactor(scale)
       setSelectedFile(meta)
       setOriginalImageUrl(src)
       setProcessedImageUrl(null)
       setProcessMeta(null)
       setErrorMessage('')
       setToastMessage(
-        `Imagem "${meta.name}" carregada do histórico e pronta para processamento!`
+        `Imagem "${meta.name}" carregada com algoritmo "${isSR ? `Super-Resolução (${scale}x)` : 'Image Dehazing'}" pré-selecionado!`
       )
 
       if (onClearPendingHistoryItem) {
@@ -188,6 +224,7 @@ export default function Home({
             inputImage: originalImageUrl,
             processedImage: resultado.dados.imagem_base64,
             process: 'super-resolution',
+            scale: scaleFactor,
             fileName: currentMeta?.name || 'imagem_super_res.png',
             fileSize: fileSizeFormatted,
             fileSizeInBytes: typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
@@ -510,7 +547,7 @@ export default function Home({
                 </svg>
               </div>
               <div className="card-content">
-                <h3>Super-Resolution (ESC)</h3>
+                <h3>Super-Resolution</h3>
                 <p>Aumenta a resolução com rede neural profunda preservando nitidez e detalhes.</p>
               </div>
             </div>
@@ -725,7 +762,7 @@ export default function Home({
               <strong>
                 {selectedAlgorithm === 'dehazing'
                   ? 'Image Dehazing'
-                  : `Super-Resolution ESC (${scaleFactor}x)`}
+                  : `Super-Resolution (${scaleFactor}x)`}
               </strong>
             </div>
             <div className="action-buttons">

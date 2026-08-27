@@ -155,6 +155,13 @@ export async function saveHistoryItem(userEmail, item) {
     second: '2-digit',
   })
 
+  const isSR =
+    item.process === 'super-resolution' ||
+    String(item.process || '').toLowerCase().includes('super-resolution') ||
+    String(item.process || '').toLowerCase().includes('esc')
+
+  const scale = item.scale ? Number(item.scale) : 2
+
   const newItem = {
     id: item.id || `hist_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
     userEmail: userEmail.toLowerCase(),
@@ -163,11 +170,11 @@ export async function saveHistoryItem(userEmail, item) {
     timestamp: item.timestamp || Date.now(),
     inputImage: item.inputImage, // Base64 dataURL da imagem original
     processedImage: item.processedImage || null, // Base64 dataURL da imagem processada
-    process: item.process || 'dehazing',
-    processLabel:
-      item.process === 'super-resolution'
-        ? 'Super-Resolution'
-        : 'Image Dehazing',
+    process: isSR ? 'super-resolution' : 'dehazing',
+    scale: scale,
+    processLabel: isSR
+      ? `Super-Resolution (ESC ${scale}x)`
+      : 'Image Dehazing',
     fileName: item.fileName || 'imagem_upload.png',
     fileSize: item.fileSize || '1.0 MB',
     fileSizeInBytes: item.fileSizeInBytes || 0,
@@ -189,7 +196,8 @@ export async function saveHistoryItem(userEmail, item) {
         email: userEmail,
         inputImage: item.inputImage,
         processedImage: item.processedImage,
-        process: item.process,
+        process: newItem.process,
+        scale: newItem.scale,
         fileName: item.fileName,
         fileSize: item.fileSize,
         dimensions: item.dimensions,

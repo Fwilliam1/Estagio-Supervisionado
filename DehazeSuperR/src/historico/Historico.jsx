@@ -38,8 +38,15 @@ export default function Historico({
   // Filtragem dos itens de histórico
   const filteredHistory = useMemo(() => {
     return historyList.filter((item) => {
+      const isSR =
+        item.process === 'super-resolution' ||
+        String(item.process || '').toLowerCase().includes('super-resolution') ||
+        String(item.process || '').toLowerCase().includes('esc')
+
+      const normalizedProcess = isSR ? 'super-resolution' : 'dehazing'
+
       const matchFilter =
-        filterProcess === 'all' || item.process === filterProcess
+        filterProcess === 'all' || normalizedProcess === filterProcess
 
       const matchSearch =
         searchTerm.trim() === '' ||
@@ -212,7 +219,7 @@ export default function Historico({
             >
               <span className="filter-dot dehaze-dot"></span>
               Dehazing (
-              {historyList.filter((i) => i.process === 'dehazing').length})
+              {historyList.filter((i) => !String(i.process || '').toLowerCase().includes('super-resolution') && !String(i.process || '').toLowerCase().includes('esc')).length})
             </button>
             <button
               type="button"
@@ -221,7 +228,7 @@ export default function Historico({
             >
               <span className="filter-dot sr-dot"></span>
               Super-Resolution (
-              {historyList.filter((i) => i.process === 'super-resolution').length})
+              {historyList.filter((i) => String(i.process || '').toLowerCase().includes('super-resolution') || String(i.process || '').toLowerCase().includes('esc')).length})
             </button>
           </div>
 
