@@ -1,7 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import pavicLogo from '../assets/pavic_logo.jpg'
 import { getUserHistory, saveHistoryItem } from '../utils/historyStorage'
+import { imageApi } from '../services/imageApi'
 import './Home.css'
+
+// Converte DataURL Base64 em objeto File para envio ao backend se necessário
+async function dataUrlToFile(dataUrl, fileName) {
+  const res = await fetch(dataUrl)
+  const blob = await res.blob()
+  return new File([blob], fileName || 'imagem.png', { type: blob.type || 'image/png' })
+}
 
 export default function Home({
   currentUser,
@@ -13,6 +21,7 @@ export default function Home({
   const [selectedAlgorithm, setSelectedAlgorithm] = useState(
     () => pendingHistoryItem?.process || 'dehazing'
   )
+  const [scaleFactor, setScaleFactor] = useState(2) // 2 | 3 | 4
   const [selectedFile, setSelectedFile] = useState(() =>
     pendingHistoryItem
       ? {
@@ -28,18 +37,20 @@ export default function Home({
     () => pendingHistoryItem?.inputImage || null
   )
   const [processedImageUrl, setProcessedImageUrl] = useState(null)
+  const [processMeta, setProcessMeta] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [toastMessage, setToastMessage] = useState(() =>
     pendingHistoryItem
       ? `Imagem "${
           pendingHistoryItem.fileName || 'selecionada'
-        }" carregada do histórico e reenviada para processamento!`
+        }" carregada do histórico e pronta para processamento!`
       : null
   )
   const [historyCount, setHistoryCount] = useState(() => {
     return getUserHistory(currentUser?.email).length
   })
+  const [errorMessage, setErrorMessage] = useState('')
 
   const fileInputRef = useRef(null)
 
@@ -60,126 +71,6 @@ export default function Home({
     selectedFileRef.current = selectedFile
   }, [selectedFile])
 
-  // Processamento da imagem via Canvas com Algoritmos de Visão Computacional
-  const executeProcessing = useCallback(
-    (inputSrc, algorithm, fileMeta = null) => {
-      if (!inputSrc) return
-
-      setIsProcessing(true)
-      setProcessedImageUrl(null)
-
-      const img = new Image()
-      img.crossOrigin = 'Anonymous'
-      img.src = inputSrc
-
-      img.onload = () => {
-        setTimeout(() => {
-          try {
-            const canvas = document.createElement('canvas')
-            const ctx = canvas.getContext('2d')
-
-            canvas.width = img.width
-            canvas.height = img.height
-
-            ctx.drawImage(img, 0, 0)
-
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-            const data = imageData.data
-
-            if (algorithm === 'dehazing') {
-              // Dehazing Filter: Enhance contrast, remove haze/fog layer, boost saturation
-              for (let i = 0; i < data.length; i += 4) {
-                let r = data[i]
-                let g = data[i + 1]
-                let b = data[i + 2]
-
-                // Calculate lightness/haze level
-                const minChannel = Math.min(r, g, b)
-                const hazeEstimate = minChannel * 0.45
-
-                // Remove haze and restore contrast
-                r = Math.min(255, Math.max(0, (r - hazeEstimate) * 1.25))
-                g = Math.min(255, Math.max(0, (g - hazeEstimate) * 1.25))
-                b = Math.min(255, Math.max(0, (b - hazeEstimate) * 1.25))
-
-                // Saturation boost for restored haze colors
-                const avg = (r + g + b) / 3
-                data[i] = Math.min(255, Math.max(0, avg + (r - avg) * 1.15))
-                data[i + 1] = Math.min(255, Math.max(0, avg + (g - avg) * 1.15))
-                data[i + 2] = Math.min(255, Math.max(0, avg + (b - avg) * 1.15))
-              }
-            } else {
-              // Super-Resolution Filter: Unsharp mask / Detail enhancement filter
-              const width = canvas.width
-              const height = canvas.height
-              const copy = new Uint8ClampedArray(data)
-
-              // 3x3 Sharpen Kernel
-              for (let y = 1; y < height - 1; y++) {
-                for (let x = 1; x < width - 1; x++) {
-                  const idx = (y * width + x) * 4
-                  for (let c = 0; c < 3; c++) {
-                    const top = ((y - 1) * width + x) * 4 + c
-                    const bottom = ((y + 1) * width + x) * 4 + c
-                    const left = (y * width + (x - 1)) * 4 + c
-                    const right = (y * width + (x + 1)) * 4 + c
-
-                    const val =
-                      5 * copy[idx + c] -
-                      copy[top] -
-                      copy[bottom] -
-                      copy[left] -
-                      copy[right]
-                    data[idx + c] = Math.min(255, Math.max(0, val))
-                  }
-                }
-              }
-            }
-
-            ctx.putImageData(imageData, 0, 0)
-            const resultDataUrl = canvas.toDataURL('image/png')
-            setProcessedImageUrl(resultDataUrl)
-            setIsProcessing(false)
-
-            // Salva a imagem no histórico individual do usuário
-            const activeUser = currentUserRef.current
-            const activeEmail = activeUser?.email
-            if (activeEmail) {
-              const currentMeta = fileMeta || selectedFileRef.current
-              const fileSizeFormatted = currentMeta?.size
-                ? typeof currentMeta.size === 'number'
-                  ? `${(currentMeta.size / (1024 * 1024)).toFixed(2)} MB`
-                  : currentMeta.size
-                : '1.0 MB'
-
-              saveHistoryItem(activeEmail, {
-                inputImage: inputSrc,
-                processedImage: resultDataUrl,
-                process: algorithm,
-                fileName: currentMeta?.name || 'imagem_processada.png',
-                fileSize: fileSizeFormatted,
-                fileSizeInBytes:
-                  typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
-                dimensions: `${img.width}x${img.height} px`,
-              }).then(() => {
-                refreshHistoryCount()
-              })
-            }
-          } catch (err) {
-            console.error('Erro no processamento da imagem:', err)
-            setIsProcessing(false)
-          }
-        }, 500)
-      }
-
-      img.onerror = (err) => {
-        console.error('Erro ao carregar a imagem para processamento:', err)
-        setIsProcessing(false)
-      }
-    },
-    [refreshHistoryCount]
-  )
-
   // Quando o componente recebe um item do histórico para reprocessamento
   useEffect(() => {
     if (pendingHistoryItem && pendingHistoryItem.inputImage) {
@@ -197,34 +88,37 @@ export default function Home({
       setSelectedFile(meta)
       setOriginalImageUrl(src)
       setProcessedImageUrl(null)
+      setProcessMeta(null)
+      setErrorMessage('')
       setToastMessage(
-        `Imagem "${meta.name}" carregada do histórico e reenviada para processamento!`
+        `Imagem "${meta.name}" carregada do histórico e pronta para processamento!`
       )
-
-      executeProcessing(src, algo, meta)
 
       if (onClearPendingHistoryItem) {
         onClearPendingHistoryItem()
       }
     }
-  }, [pendingHistoryItem, executeProcessing, onClearPendingHistoryItem])
+  }, [pendingHistoryItem, onClearPendingHistoryItem])
 
   const handleFileChange = (file) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      alert('Por favor, selecione um arquivo de imagem válido (PNG, JPG, JPEG).')
+      setErrorMessage('Por favor, selecione um arquivo de imagem válido (PNG, JPG, JPEG).')
       return
     }
     if (file.size > 10 * 1024 * 1024) {
-      alert('O tamanho do arquivo deve ser de até 10MB.')
+      setErrorMessage('O tamanho do arquivo deve ser de até 10MB.')
       return
     }
 
+    setErrorMessage('')
     setSelectedFile(file)
+
     const reader = new FileReader()
     reader.onload = (e) => {
       setOriginalImageUrl(e.target.result)
       setProcessedImageUrl(null)
+      setProcessMeta(null)
     }
     reader.readAsDataURL(file)
   }
@@ -252,21 +146,157 @@ export default function Home({
     setSelectedFile(null)
     setOriginalImageUrl(null)
     setProcessedImageUrl(null)
+    setProcessMeta(null)
+    setErrorMessage('')
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
   }
 
-  const handleProcessClick = () => {
-    if (!originalImageUrl || isProcessing) return
-    executeProcessing(originalImageUrl, selectedAlgorithm, selectedFile)
+  // Processamento da imagem (Super-Resolução na API Backend / Dehazing no Canvas)
+  const handleProcessClick = async () => {
+    if (!originalImageUrl || !selectedFile || isProcessing) return
+
+    setIsProcessing(true)
+    setErrorMessage('')
+    setProcessedImageUrl(null)
+    setProcessMeta(null)
+
+    // 1. Algoritmo Super-Resolution com a Rede Neural ESC no Backend Django
+    if (selectedAlgorithm === 'super-resolution') {
+      try {
+        let fileToSend = selectedFile
+        if (!(selectedFile instanceof File)) {
+          fileToSend = await dataUrlToFile(originalImageUrl, selectedFile.name || 'imagem.png')
+        }
+
+        const resultado = await imageApi.processSuperResolution(fileToSend, scaleFactor)
+        setProcessedImageUrl(resultado.dados.imagem_base64)
+        setProcessMeta(resultado.dados)
+
+        // Salva a imagem no histórico individual do usuário
+        const activeEmail = currentUserRef.current?.email
+        if (activeEmail) {
+          const currentMeta = selectedFileRef.current
+          const fileSizeFormatted = currentMeta?.size
+            ? typeof currentMeta.size === 'number'
+              ? `${(currentMeta.size / (1024 * 1024)).toFixed(2)} MB`
+              : currentMeta.size
+            : '1.0 MB'
+
+          saveHistoryItem(activeEmail, {
+            inputImage: originalImageUrl,
+            processedImage: resultado.dados.imagem_base64,
+            process: 'super-resolution',
+            fileName: currentMeta?.name || 'imagem_super_res.png',
+            fileSize: fileSizeFormatted,
+            fileSizeInBytes: typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
+            dimensions: resultado.dados.resolucao_processada || 'N/A',
+          }).then(() => {
+            refreshHistoryCount()
+          })
+        }
+      } catch (error) {
+        setErrorMessage(error.message || 'Erro ao processar imagem na rede neural ESC.')
+      } finally {
+        setIsProcessing(false)
+      }
+      return
+    }
+
+    // 2. Algoritmo Dehazing (Processamento Canvas / Filtro de Visão Computacional)
+    const img = new Image()
+    img.crossOrigin = 'Anonymous'
+    img.src = originalImageUrl
+
+    img.onload = () => {
+      setTimeout(() => {
+        try {
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')
+
+          canvas.width = img.width
+          canvas.height = img.height
+          ctx.drawImage(img, 0, 0)
+
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+          const data = imageData.data
+
+          // Dehazing Filter: Enhance contrast, remove haze/fog layer, boost saturation
+          for (let i = 0; i < data.length; i += 4) {
+            let r = data[i]
+            let g = data[i + 1]
+            let b = data[i + 2]
+
+            // Calculate lightness/haze level
+            const minChannel = Math.min(r, g, b)
+            const hazeEstimate = minChannel * 0.45
+
+            // Remove haze and restore contrast
+            r = Math.min(255, Math.max(0, (r - hazeEstimate) * 1.25))
+            g = Math.min(255, Math.max(0, (g - hazeEstimate) * 1.25))
+            b = Math.min(255, Math.max(0, (b - hazeEstimate) * 1.25))
+
+            // Slight saturation boost for restored haze colors
+            const avg = (r + g + b) / 3
+            data[i] = Math.min(255, Math.max(0, avg + (r - avg) * 1.15))
+            data[i + 1] = Math.min(255, Math.max(0, avg + (g - avg) * 1.15))
+            data[i + 2] = Math.min(255, Math.max(0, avg + (b - avg) * 1.15))
+          }
+
+          ctx.putImageData(imageData, 0, 0)
+          const resultDataUrl = canvas.toDataURL('image/png')
+          setProcessedImageUrl(resultDataUrl)
+          setProcessMeta({
+            resolucao_processada: `${img.width}x${img.height}`,
+            tempo_execucao_segundos: 0.6,
+            dispositivo: 'Client'
+          })
+
+          // Salva a imagem no histórico individual do usuário
+          const activeEmail = currentUserRef.current?.email
+          if (activeEmail) {
+            const currentMeta = selectedFileRef.current
+            const fileSizeFormatted = currentMeta?.size
+              ? typeof currentMeta.size === 'number'
+                ? `${(currentMeta.size / (1024 * 1024)).toFixed(2)} MB`
+                : currentMeta.size
+              : '1.0 MB'
+
+            saveHistoryItem(activeEmail, {
+              inputImage: originalImageUrl,
+              processedImage: resultDataUrl,
+              process: 'dehazing',
+              fileName: currentMeta?.name || 'imagem_dehazed.png',
+              fileSize: fileSizeFormatted,
+              fileSizeInBytes: typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
+              dimensions: `${img.width}x${img.height} px`,
+            }).then(() => {
+              refreshHistoryCount()
+            })
+          }
+        } catch (err) {
+          console.error('Erro no processamento da imagem:', err)
+          setErrorMessage('Erro ao aplicar o filtro Dehazing na imagem.')
+        } finally {
+          setIsProcessing(false)
+        }
+      }, 500)
+    }
+
+    img.onerror = () => {
+      setErrorMessage('Erro ao carregar a imagem original.')
+      setIsProcessing(false)
+    }
   }
 
   const downloadProcessedImage = () => {
     if (!processedImageUrl) return
     const link = document.createElement('a')
     link.href = processedImageUrl
-    link.download = `${selectedAlgorithm}_resultado.png`
+    const baseName = selectedFile?.name ? selectedFile.name.replace(/\.[^/.]+$/, '') : 'resultado'
+    const scaleSuffix = selectedAlgorithm === 'super-resolution' ? `_x${scaleFactor}_ESC` : '_dehazed'
+    link.download = `${baseName}${scaleSuffix}.png`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -381,19 +411,29 @@ export default function Home({
           </div>
         )}
 
+        {/* Mensagem de Erro Global */}
+        {errorMessage && (
+          <div className="home-alert-error" role="alert">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
         {/* Hero Section */}
         <section className="hero-section">
           <div className="category-tag">
             <span className="category-line"></span>
-            VISÃO COMPUTACIONAL
+            VISÃO COMPUTACIONAL & IA
           </div>
           <h1 className="hero-title">
-            Aprimore suas imagens com <span className="highlight">um clique.</span>
+            Aprimore suas imagens com <span className="highlight">redes neurais.</span>
           </h1>
           <p className="hero-subtitle">
-            Escolha um algoritmo, envie sua imagem e faça o download do resultado.
-            Todo o processamento ocorre no seu dispositivo e fica salvo no seu
-            histórico individual.
+            Escolha um algoritmo, selecione a escala e processe sua imagem utilizando modelos de Super-Resolução na GPU ou Image Dehazing com histórico sincronizado.
           </p>
         </section>
 
@@ -403,10 +443,12 @@ export default function Home({
           <div className="algorithm-grid">
             {/* Card 1: Image Dehazing */}
             <div
-              className={`algorithm-card ${
-                selectedAlgorithm === 'dehazing' ? 'selected' : ''
-              }`}
-              onClick={() => setSelectedAlgorithm('dehazing')}
+              className={`algorithm-card ${selectedAlgorithm === 'dehazing' ? 'selected' : ''}`}
+              onClick={() => {
+                setSelectedAlgorithm('dehazing')
+                setProcessedImageUrl(null)
+                setProcessMeta(null)
+              }}
             >
               {selectedAlgorithm === 'dehazing' && (
                 <div className="card-dot"></div>
@@ -438,10 +480,12 @@ export default function Home({
 
             {/* Card 2: Super-Resolution */}
             <div
-              className={`algorithm-card ${
-                selectedAlgorithm === 'super-resolution' ? 'selected' : ''
-              }`}
-              onClick={() => setSelectedAlgorithm('super-resolution')}
+              className={`algorithm-card ${selectedAlgorithm === 'super-resolution' ? 'selected' : ''}`}
+              onClick={() => {
+                setSelectedAlgorithm('super-resolution')
+                setProcessedImageUrl(null)
+                setProcessMeta(null)
+              }}
             >
               {selectedAlgorithm === 'super-resolution' && (
                 <div className="card-dot"></div>
@@ -466,13 +510,59 @@ export default function Home({
                 </svg>
               </div>
               <div className="card-content">
-                <h3>Super-Resolution</h3>
-                <p>
-                  Aumenta a resolução da imagem preservando detalhes e nitidez.
-                </p>
+                <h3>Super-Resolution (ESC)</h3>
+                <p>Aumenta a resolução com rede neural profunda preservando nitidez e detalhes.</p>
               </div>
             </div>
           </div>
+
+          {/* Seletor de Fator de Escala (Exibido quando Super-Resolution estiver ativo) */}
+          {selectedAlgorithm === 'super-resolution' && (
+            <div className="scale-selector-wrapper">
+              <div className="scale-selector-title">
+                <span className="label">Fator de Escala do Modelo</span>
+                <span className="desc">Selecione o multiplicador de resolução para a reconstrução:</span>
+              </div>
+              <div className="scale-options-pills">
+                <button
+                  type="button"
+                  className={`scale-pill-btn ${scaleFactor === 2 ? 'active' : ''}`}
+                  onClick={() => {
+                    setScaleFactor(2)
+                    setProcessedImageUrl(null)
+                    setProcessMeta(null)
+                  }}
+                  disabled={isProcessing}
+                >
+                  <span>X2</span>
+                </button>
+                <button
+                  type="button"
+                  className={`scale-pill-btn ${scaleFactor === 3 ? 'active' : ''}`}
+                  onClick={() => {
+                    setScaleFactor(3)
+                    setProcessedImageUrl(null)
+                    setProcessMeta(null)
+                  }}
+                  disabled={isProcessing}
+                >
+                  <span>X3</span>
+                </button>
+                <button
+                  type="button"
+                  className={`scale-pill-btn ${scaleFactor === 4 ? 'active' : ''}`}
+                  onClick={() => {
+                    setScaleFactor(4)
+                    setProcessedImageUrl(null)
+                    setProcessMeta(null)
+                  }}
+                  disabled={isProcessing}
+                >
+                  <span>X4</span>
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* 2. Envie a Imagem */}
@@ -579,28 +669,24 @@ export default function Home({
               <div className="preview-header">
                 <span className="preview-header-title">RESULTADO</span>
                 {processedImageUrl && (
-                  <span className="processed-badge">PROCESSADO</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span className="processed-badge">PROCESSADO</span>
+                    {processMeta && (
+                      <span className="process-meta-info" title={`Executado em ${processMeta.dispositivo}`}>
+                        {processMeta.resolucao_processada} · {processMeta.tempo_execucao_segundos}s
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="preview-body">
                 {isProcessing ? (
                   <div className="empty-placeholder">
-                    <div
-                      className="spinner"
-                      style={{
-                        width: '28px',
-                        height: '28px',
-                        borderTopColor: '#F06529',
-                      }}
-                    ></div>
-                    <p
-                      style={{
-                        marginTop: '12px',
-                        color: '#F06529',
-                        fontWeight: 600,
-                      }}
-                    >
-                      Processando imagem...
+                    <div className="spinner" style={{ width: '32px', height: '32px', borderTopColor: '#F06529', borderWidth: '3px' }}></div>
+                    <p style={{ marginTop: '12px', color: '#F06529', fontWeight: 600 }}>
+                      {selectedAlgorithm === 'super-resolution'
+                        ? `Processando Super-Resolução (${scaleFactor}x) na GPU...`
+                        : 'Processando Dehazing...'}
                     </p>
                   </div>
                 ) : processedImageUrl ? (
@@ -635,11 +721,11 @@ export default function Home({
           {/* Bottom Control Bar */}
           <div className="actions-bar">
             <div className="selected-algo-info">
-              Algoritmo selecionado:{' '}
+              Algoritmo:{' '}
               <strong>
                 {selectedAlgorithm === 'dehazing'
                   ? 'Image Dehazing'
-                  : 'Super-Resolution'}
+                  : `Super-Resolution ESC (${scaleFactor}x)`}
               </strong>
             </div>
             <div className="action-buttons">
@@ -711,4 +797,3 @@ export default function Home({
     </div>
   )
 }
-

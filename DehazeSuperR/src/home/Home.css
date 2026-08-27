@@ -360,6 +360,99 @@
   line-height: 1.45;
 }
 
+/* Scale Selector for Super-Resolution */
+.scale-selector-wrapper {
+  margin-top: 20px;
+  background-color: #ffffff;
+  border: 1.5px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  animation: fadeIn 0.25s ease;
+}
+
+.scale-selector-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scale-selector-title span.label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand-navy);
+}
+
+.scale-selector-title span.desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.scale-options-pills {
+  display: flex;
+  gap: 8px;
+}
+
+.scale-pill-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border-color);
+  background-color: #f8fafc;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scale-pill-btn:hover {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  color: var(--brand-navy);
+}
+
+.scale-pill-btn.active {
+  background-color: var(--brand-orange);
+  border-color: var(--brand-orange);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(240, 101, 41, 0.25);
+}
+
+.home-alert-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  margin-bottom: 20px;
+  animation: fadeIn 0.2s ease;
+}
+
+.process-meta-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #059669;
+  background-color: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 600;
+  margin-left: 12px;
+}
+
+
 /* Upload Zone */
 .upload-zone {
   border: 1.5px dashed var(--border-dashed);
