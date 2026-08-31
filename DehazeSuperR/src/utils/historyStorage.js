@@ -161,10 +161,12 @@ export async function fetchUserHistoryFromApi(userEmail) {
  * Salva uma nova imagem no histórico do usuário (Local + REST API Django)
  */
 export async function saveHistoryItem(userEmail, item) {
-  if (!userEmail) return null
+  const email = (userEmail || getCurrentUser()?.email || '').trim().toLowerCase()
+  if (!email) return null
 
-  const key = `${HISTORY_PREFIX}${userEmail.toLowerCase()}`
-  const currentList = getUserHistory(userEmail)
+  const key = `${HISTORY_PREFIX}${email}`
+  const currentList = getUserHistory(email)
+
 
   const now = new Date()
   const formattedDate = now.toLocaleDateString('pt-BR', {

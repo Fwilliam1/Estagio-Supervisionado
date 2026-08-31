@@ -44,9 +44,10 @@ export default function Historico({
   onSelectHistoryItem,
   onLogout,
 }) {
+  const activeEmail = currentUser?.email || authApi.getCurrentUser()?.email
 
   const [historyList, setHistoryList] = useState(() =>
-    getUserHistory(currentUser?.email)
+    getUserHistory(activeEmail)
   )
   const [filterProcess, setFilterProcess] = useState('all') // 'all' | 'dehazing' | 'super-resolution'
   const [searchTerm, setSearchTerm] = useState('')
@@ -54,8 +55,8 @@ export default function Historico({
   // Sincroniza com o banco de dados Django via API REST ao abrir a tela
   useEffect(() => {
     let isMounted = true
-    if (currentUser?.email) {
-      fetchUserHistoryFromApi(currentUser.email).then((apiData) => {
+    if (activeEmail) {
+      fetchUserHistoryFromApi(activeEmail).then((apiData) => {
         if (isMounted && Array.isArray(apiData)) {
           setHistoryList(apiData)
         }
@@ -64,7 +65,8 @@ export default function Historico({
     return () => {
       isMounted = false
     }
-  }, [currentUser])
+  }, [activeEmail])
+
 
   // Filtragem dos itens de histórico
   const filteredHistory = useMemo(() => {

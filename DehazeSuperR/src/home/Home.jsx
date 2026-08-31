@@ -74,8 +74,9 @@ export default function Home({
 
   // Atualiza a contagem de itens no histórico
   const refreshHistoryCount = useCallback(() => {
-    if (currentUser?.email) {
-      setHistoryCount(getUserHistory(currentUser.email).length)
+    const email = currentUser?.email || authApi.getCurrentUser()?.email
+    if (email) {
+      setHistoryCount(getUserHistory(email).length)
     }
   }, [currentUser])
 
@@ -98,9 +99,10 @@ export default function Home({
       setProcessedImageUrl(null)
       setProcessMeta(null)
 
-      const activeUser = currentUserRef.current
+      const activeUser = currentUserRef.current || currentUser || authApi.getCurrentUser()
       const currentMeta = fileMeta || selectedFileRef.current
       const token = authApi.getToken()
+
 
       let resultDataUrl = null
       let imgWidth = 800
@@ -370,7 +372,7 @@ export default function Home({
       setProcessMeta(resultado.dados)
 
       // Salva a imagem no histórico individual do usuário
-      const activeEmail = currentUserRef.current?.email
+      const activeEmail = currentUserRef.current?.email || currentUser?.email || authApi.getCurrentUser()?.email
       if (activeEmail) {
         const currentMeta = selectedFileRef.current
         const fileSizeFormatted = currentMeta?.size
@@ -379,7 +381,7 @@ export default function Home({
             : currentMeta.size
           : '1.0 MB'
 
-        saveHistoryItem(activeEmail, {
+        await saveHistoryItem(activeEmail, {
           db_id: resultado?.dados?.imagem_id,
           id: resultado?.dados?.imagem_id ? `db_${resultado.dados.imagem_id}` : undefined,
           skipApiSave: Boolean(resultado?.dados?.imagem_id),
@@ -391,11 +393,11 @@ export default function Home({
           fileSize: fileSizeFormatted,
           fileSizeInBytes: typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
           dimensions: resultado.dados.resolucao_processada || 'N/A',
-        }).then(() => {
-          refreshHistoryCount()
         })
+        refreshHistoryCount()
       }
     } catch (error) {
+
       setErrorMessage(error.message || 'Erro ao processar imagem no backend.')
     } finally {
       setIsProcessing(false)

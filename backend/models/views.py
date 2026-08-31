@@ -23,8 +23,8 @@ def helper_data_url_to_bytes(data_url: str):
         return encoded.encode('utf-8')
 
 
-def helper_bytes_to_data_url(raw_bytes: bytes, mime_type: str = 'image/png') -> str:
-    """Converte bytes brutos em uma string DataURL pronta para visualização no navegador."""
+def helper_bytes_to_data_url(raw_bytes: bytes, formato: str = 'image/png') -> str:
+    """Converte bytes brutos em uma string DataURL com MIME type válido para visualização no navegador."""
     if not raw_bytes:
         return None
     try:
@@ -32,9 +32,33 @@ def helper_bytes_to_data_url(raw_bytes: bytes, mime_type: str = 'image/png') -> 
             raw_bytes = raw_bytes.tobytes()
         elif isinstance(raw_bytes, str):
             raw_bytes = raw_bytes.encode('utf-8')
-            
+
+        # Detecção automática de MIME type pelos magic bytes do arquivo
+        if raw_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
+            mime = 'image/png'
+        elif raw_bytes.startswith(b'\xff\xd8\xff'):
+            mime = 'image/jpeg'
+        elif raw_bytes.startswith(b'RIFF') and len(raw_bytes) > 12 and raw_bytes[8:12] == b'WEBP':
+            mime = 'image/webp'
+        elif raw_bytes.startswith(b'GIF87a') or raw_bytes.startswith(b'GIF89a'):
+            mime = 'image/gif'
+        else:
+            fmt = (formato or 'image/png').lower().strip().replace('.', '')
+            if fmt in ('jpg', 'jpeg', 'image/jpg', 'image/jpeg'):
+                mime = 'image/jpeg'
+            elif fmt in ('png', 'image/png'):
+                mime = 'image/png'
+            elif fmt in ('webp', 'image/webp'):
+                mime = 'image/webp'
+            elif fmt in ('gif', 'image/gif'):
+                mime = 'image/gif'
+            elif 'image/' in fmt:
+                mime = fmt
+            else:
+                mime = 'image/png'
+
         b64_str = base64.b64encode(raw_bytes).decode('utf-8')
-        return f"data:{mime_type};base64,{b64_str}"
+        return f"data:{mime};base64,{b64_str}"
     except Exception:
         return None
 
@@ -141,14 +165,15 @@ def historico_api(request):
         for img in imagens:
             # Deduplicação defensiva contra múltiplos envios idênticos
             created_ts = int(img.criado_em.timestamp()) if img.criado_em else 0
-            dedup_key = (img.nomeArquivo, img.algoritmo_id if img.algoritmo_id else 0, created_ts // 4)
+            dedup_key = (img.nomeArquivo, img.algoritmo_id if img.algoritmo_id else 0, created_ts // 2)
             if dedup_key in seen_items:
                 continue
             seen_items.add(dedup_key)
 
             formato = img.formato or 'image/png'
             input_url = helper_bytes_to_data_url(img.dadosOriginal, formato)
-            processed_url = helper_bytes_to_data_url(img.dadosProcessada, formato) if img.dadosProcessada else None
+            processed_url = helper_bytes_to_data_url(img.dadosProcessada, 'image/png') if img.dadosProcessada else None
+
 
             created_time = timezone.localtime(img.criado_em) if img.criado_em else timezone.localtime(timezone.now())
             formatted_date = created_time.strftime("%d/%m/%Y")
