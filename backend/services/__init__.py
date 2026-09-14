@@ -15,6 +15,7 @@ from .jwt_service import JWTService
 from .super_resolution_service import SuperResolutionService
 from .depth_service import DepthAnythingService
 from .dehazing_service import DehazingService
+from .convir_service import ConvIRService
 
 __all__ = [
     'ServiceException',
@@ -32,6 +33,7 @@ __all__ = [
     'SuperResolutionService',
     'DepthAnythingService',
     'DehazingService',
+    'ConvIRService',
 ]
 
 

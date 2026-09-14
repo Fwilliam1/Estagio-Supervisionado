@@ -1,4 +1,4 @@
-﻿import io
+import io
 import time
 import base64
 import os
@@ -96,16 +96,33 @@ class DehazingService:
         return model
 
     @classmethod
+    def processar_imagem_convir(
+        cls,
+        image_bytes: bytes,
+        version: str = 'small'
+    ) -> Dict[str, Any]:
+        """
+        Executa a inferência de Dehazing utilizando a arquitetura ConvIR (small, pesos ots_small.pkl).
+        """
+        from .convir_service import ConvIRService
+        return ConvIRService.processar_imagem(image_bytes=image_bytes, version=version)
+
+    @classmethod
     def processar_imagem(
         cls,
         image_bytes: bytes,
-        input_size: int = 518
+        input_size: int = 518,
+        modelo: str = 'udpnet',
+        version: str = 'small'
     ) -> Dict[str, Any]:
         """
-        Executa o pipeline completo de Dehazing:
-        1. Imagem de entrada -> Depth Anything V2 -> Mapa de Profundidade
-        2. Imagem + Mapa de Profundidade (4 canais) -> UDPNet (FSNet OTS) -> Imagem sem nevoa
+        Executa o pipeline de Dehazing selecionado:
+        - modelo='udpnet': Depth Anything V2 + UDPNet (FSNet OTS)
+        - modelo='convir': ConvIR small (ots_small.pkl)
         """
+        if modelo and str(modelo).lower() in ('convir', 'convir_small', 'convir-small', 'convir_ots'):
+            return cls.processar_imagem_convir(image_bytes=image_bytes, version=version)
+
         if not image_bytes or len(image_bytes) == 0:
             raise ValidacaoError("Nenhum dado de imagem foi enviado.")
 

@@ -214,9 +214,18 @@ def historico_api(request):
                 'dmnet' in algo_tipo_raw.lower() or
                 'esc' in algo_tipo_raw.lower()
             )
+            is_hdr = 'hdr' in algo_tipo_raw.lower()
+            dehazing_model = 'ConvIR' if 'convir' in algo_tipo_raw.lower() else 'UDPNet'
 
-            algo_tipo = 'super-resolution' if is_sr else 'dehazing'
-            algo_label = f"Super-Resolution ({modelo} {scale}x)" if is_sr else "Image Dehazing"
+            if is_sr:
+                algo_tipo = 'super-resolution'
+                algo_label = f"Super-Resolution ({modelo} {scale}x)"
+            elif is_hdr:
+                algo_tipo = 'hdr'
+                algo_label = "HDR"
+            else:
+                algo_tipo = 'dehazing'
+                algo_label = f"Image Dehazing ({dehazing_model})"
 
             file_size_formatted = f"{img.tamanho:.2f} MB" if img.tamanho else "1.0 MB"
 
@@ -232,7 +241,8 @@ def historico_api(request):
                 "processedImage": processed_url,
                 "process": algo_tipo,
                 "scale": scale if is_sr else None,
-                "model": modelo if is_sr else None,
+                "model": modelo if is_sr else (dehazing_model if not is_hdr else None),
+                "dehazingModel": dehazing_model if not is_sr and not is_hdr else None,
                 "processLabel": algo_label,
                 "fileName": img.nomeArquivo,
                 "fileSize": file_size_formatted,
