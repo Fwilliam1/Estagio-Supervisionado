@@ -275,7 +275,7 @@
 /* Algorithm Grid */
 .algorithm-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 20px;
 }
 
@@ -343,6 +343,16 @@
 }
 
 .algorithm-card.selected .card-icon-box.super-resolution {
+  background-color: var(--brand-orange);
+  color: #ffffff;
+}
+
+.card-icon-box.hdr {
+  background-color: #e2e8f0;
+  color: #475569;
+}
+
+.algorithm-card.selected .card-icon-box.hdr {
   background-color: var(--brand-orange);
   color: #ffffff;
 }
@@ -743,6 +753,12 @@
 }
 
 /* Responsive */
+@media (max-width: 960px) {
+  .algorithm-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (max-width: 768px) {
   .app-header {
     padding: 0 20px;

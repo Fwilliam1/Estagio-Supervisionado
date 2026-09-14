@@ -186,11 +186,22 @@ export async function saveHistoryItem(userEmail, item) {
     String(item.process || '').toLowerCase().includes('esc') ||
     String(item.process || '').toLowerCase().includes('dmnet')
 
+  const isHdr =
+    item.process === 'hdr' ||
+    String(item.process || '').toLowerCase().includes('hdr')
+
   const scale = item.scale ? Number(item.scale) : 2
   const rawDesc = (String(item.process || '') + ' ' + String(item.processLabel || '')).toLowerCase()
   const model = item.model || (rawDesc.includes('esc') ? 'ESC' : 'DMNet')
 
   const finalId = item.id || (item.db_id ? `db_${item.db_id}` : `hist_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`)
+
+  const resolvedProcess = isSR ? 'super-resolution' : isHdr ? 'hdr' : 'dehazing'
+  const resolvedProcessLabel = isSR
+    ? `Super-Resolution (${model} ${scale}x)`
+    : isHdr
+    ? 'HDR'
+    : 'Image Dehazing'
 
   const newItem = {
     id: finalId,
@@ -201,12 +212,10 @@ export async function saveHistoryItem(userEmail, item) {
     timestamp: item.timestamp || Date.now(),
     inputImage: item.inputImage, // Base64 dataURL da imagem original
     processedImage: item.processedImage || null, // Base64 dataURL da imagem processada
-    process: isSR ? 'super-resolution' : 'dehazing',
+    process: resolvedProcess,
     scale: isSR ? scale : undefined,
     model: isSR ? model : undefined,
-    processLabel: isSR
-      ? `Super-Resolution (${model} ${scale}x)`
-      : 'Image Dehazing',
+    processLabel: resolvedProcessLabel,
     fileName: item.fileName || 'imagem_upload.png',
     fileSize: item.fileSize || '1.0 MB',
     fileSizeInBytes: item.fileSizeInBytes || 0,
