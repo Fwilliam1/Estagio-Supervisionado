@@ -26,6 +26,9 @@ export default function Home({
     if (raw.includes('super-resolution') || raw.includes('esc') || rawLabel.includes('super-resolution')) {
       return 'super-resolution'
     }
+    if (raw.includes('hdr')) {
+      return 'hdr'
+    }
     return 'dehazing'
   })
   const [scaleFactor, setScaleFactor] = useState(() => {
@@ -61,6 +64,8 @@ export default function Home({
           pendingHistoryItem.processLabel ||
           (pendingHistoryItem.process === 'super-resolution'
             ? 'Super-Resolução'
+            : pendingHistoryItem.process === 'hdr'
+            ? 'HDR'
             : 'Image Dehazing')
         }" pré-selecionado!`
       : null
@@ -109,12 +114,14 @@ export default function Home({
       let imgHeight = 600
       let createdImageId = null
 
-      // 1. Tenta executar a inferência de IA no backend Django (Depth Anything V2 + UDPNet para Dehazing ou ESC para Super-Resolution)
+      // 1. Tenta executar a inferência de IA no backend Django (Depth Anything V2 + UDPNet para Dehazing, ESC para Super-Resolution ou HDR)
       try {
         const endpoint =
-          algorithm === 'dehazing'
-            ? 'http://127.0.0.1:8000/api/processar/dehazing/'
-            : 'http://127.0.0.1:8000/api/processar/super-resolution/'
+          algorithm === 'super-resolution'
+            ? 'http://127.0.0.1:8000/api/processar/super-resolution/'
+            : algorithm === 'hdr'
+            ? 'http://127.0.0.1:8000/api/processar/hdr/'
+            : 'http://127.0.0.1:8000/api/processar/dehazing/'
 
         const headers = { 'Content-Type': 'application/json' }
         if (token) {
@@ -181,6 +188,36 @@ export default function Home({
                 data[i] = Math.min(255, Math.max(0, avg + (r - avg) * 1.15))
                 data[i + 1] = Math.min(255, Math.max(0, avg + (g - avg) * 1.15))
                 data[i + 2] = Math.min(255, Math.max(0, avg + (b - avg) * 1.15))
+              }
+            } else if (algorithm === 'hdr') {
+              // Simulação de HDR / Tone Mapping e realce de alcance dinâmico
+              for (let i = 0; i < data.length; i += 4) {
+                let r = data[i] / 255.0
+                let g = data[i + 1] / 255.0
+                let b = data[i + 2] / 255.0
+
+                // Curva de tom: clareia sombras e preserva altas luzes (gamma adaptativo)
+                r = Math.pow(r, 0.82)
+                g = Math.pow(g, 0.82)
+                b = Math.pow(b, 0.82)
+
+                // Tone mapping de contraste local
+                const toneMap = (v) => (v * 1.18) / (1.0 + v * 0.22)
+                r = toneMap(r)
+                g = toneMap(g)
+                b = toneMap(b)
+
+                // Realce de vibração / saturação de cor
+                const max = Math.max(r, g, b)
+                const avg = (r + g + b) / 3.0
+                const vibrance = (max - avg) * 0.3
+                r = Math.min(1.0, Math.max(0.0, r + (r - avg) * vibrance))
+                g = Math.min(1.0, Math.max(0.0, g + (g - avg) * vibrance))
+                b = Math.min(1.0, Math.max(0.0, b + (b - avg) * vibrance))
+
+                data[i] = Math.round(r * 255)
+                data[i + 1] = Math.round(g * 255)
+                data[i + 2] = Math.round(b * 255)
               }
             } else {
               const width = canvas.width
@@ -254,8 +291,11 @@ export default function Home({
         rawProcess.includes('super-resolution') ||
         rawProcess.includes('esc') ||
         rawLabel.includes('super-resolution')
+      const isHDR =
+        rawProcess.includes('hdr') ||
+        rawLabel.includes('hdr')
 
-      const algo = isSR ? 'super-resolution' : 'dehazing'
+      const algo = isSR ? 'super-resolution' : isHDR ? 'hdr' : 'dehazing'
 
       let scale = 2
       if (pendingHistoryItem.scale) {
@@ -284,7 +324,13 @@ export default function Home({
       setProcessMeta(null)
       setErrorMessage('')
       setToastMessage(
-        `Imagem "${meta.name}" carregada com algoritmo "${isSR ? `Super-Resolução (${scale}x)` : 'Image Dehazing'}" pré-selecionado!`
+        `Imagem "${meta.name}" carregada com algoritmo "${
+          isSR
+            ? `Super-Resolução (${scale}x)`
+            : isHDR
+            ? 'HDR'
+            : 'Image Dehazing'
+        }" pré-selecionado!`
       )
 
       if (onClearPendingHistoryItem) {
@@ -346,7 +392,7 @@ export default function Home({
     }
   }
 
-  // Processamento da imagem (Super-Resolução ou Dehazing via API Backend)
+  // Processamento da imagem (Super-Resolução, HDR ou Dehazing via API Backend)
   const handleProcessClick = async () => {
     if (!originalImageUrl || !selectedFile || isProcessing) return
 
@@ -364,6 +410,8 @@ export default function Home({
       let resultado
       if (selectedAlgorithm === 'super-resolution') {
         resultado = await imageApi.processSuperResolution(fileToSend, scaleFactor)
+      } else if (selectedAlgorithm === 'hdr') {
+        resultado = await imageApi.processHdr(fileToSend)
       } else {
         resultado = await imageApi.processDehazing(fileToSend)
       }
@@ -389,7 +437,13 @@ export default function Home({
           processedImage: resultado.dados.imagem_base64,
           process: selectedAlgorithm,
           scale: selectedAlgorithm === 'super-resolution' ? scaleFactor : undefined,
-          fileName: currentMeta?.name || (selectedAlgorithm === 'super-resolution' ? 'imagem_super_res.png' : 'imagem_dehazed.png'),
+          fileName:
+            currentMeta?.name ||
+            (selectedAlgorithm === 'super-resolution'
+              ? 'imagem_super_res.png'
+              : selectedAlgorithm === 'hdr'
+              ? 'imagem_hdr.png'
+              : 'imagem_dehazed.png'),
           fileSize: fileSizeFormatted,
           fileSizeInBytes: typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
           dimensions: resultado.dados.resolucao_processada || 'N/A',
@@ -397,7 +451,6 @@ export default function Home({
         refreshHistoryCount()
       }
     } catch (error) {
-
       setErrorMessage(error.message || 'Erro ao processar imagem no backend.')
     } finally {
       setIsProcessing(false)
@@ -411,7 +464,12 @@ export default function Home({
     const link = document.createElement('a')
     link.href = processedImageUrl
     const baseName = selectedFile?.name ? selectedFile.name.replace(/\.[^/.]+$/, '') : 'resultado'
-    const scaleSuffix = selectedAlgorithm === 'super-resolution' ? `_x${scaleFactor}_ESC` : '_dehazed'
+    const scaleSuffix =
+      selectedAlgorithm === 'super-resolution'
+        ? `_x${scaleFactor}_ESC`
+        : selectedAlgorithm === 'hdr'
+        ? '_hdr'
+        : '_dehazed'
     link.download = `${baseName}${scaleSuffix}.png`
     document.body.appendChild(link)
     link.click()
@@ -549,7 +607,7 @@ export default function Home({
             Aprimore suas imagens com <span className="highlight">redes neurais.</span>
           </h1>
           <p className="hero-subtitle">
-            Escolha um algoritmo, selecione a escala e processe sua imagem utilizando modelos de Super-Resolução na GPU ou Image Dehazing com histórico sincronizado.
+            Escolha um algoritmo, selecione a escala e processe sua imagem utilizando modelos de Super-Resolução na GPU, Image Dehazing ou HDR com histórico sincronizado.
           </p>
         </section>
 
@@ -628,6 +686,49 @@ export default function Home({
               <div className="card-content">
                 <h3>Super-Resolution</h3>
                 <p>Aumenta a resolução com rede neural profunda preservando nitidez e detalhes.</p>
+              </div>
+            </div>
+
+            {/* Card 3: HDR */}
+            <div
+              className={`algorithm-card ${selectedAlgorithm === 'hdr' ? 'selected' : ''}`}
+              onClick={() => {
+                setSelectedAlgorithm('hdr')
+                setProcessedImageUrl(null)
+                setProcessMeta(null)
+              }}
+            >
+              {selectedAlgorithm === 'hdr' && (
+                <div className="card-dot"></div>
+              )}
+              <div className="card-icon-box hdr">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M12 2v2" />
+                  <path d="M12 20v2" />
+                  <path d="m4.93 4.93 1.41 1.41" />
+                  <path d="m17.66 17.66 1.41 1.41" />
+                  <path d="M2 12h2" />
+                  <path d="M20 12h2" />
+                  <path d="m6.34 17.66-1.41 1.41" />
+                  <path d="m19.07 4.93-1.41 1.41" />
+                </svg>
+              </div>
+              <div className="card-content">
+                <h3>HDR</h3>
+                <p>
+                  Equilibra altas luzes e sombras, amplia a faixa dinâmica e
+                  realça contraste e cores.
+                </p>
               </div>
             </div>
           </div>
@@ -802,6 +903,8 @@ export default function Home({
                     <p style={{ marginTop: '12px', color: '#F06529', fontWeight: 600 }}>
                       {selectedAlgorithm === 'super-resolution'
                         ? `Processando Super-Resolução (${scaleFactor}x) na GPU...`
+                        : selectedAlgorithm === 'hdr'
+                        ? 'Processando HDR...'
                         : 'Processando Dehazing...'}
                     </p>
                   </div>
@@ -841,6 +944,8 @@ export default function Home({
               <strong>
                 {selectedAlgorithm === 'dehazing'
                   ? 'Image Dehazing'
+                  : selectedAlgorithm === 'hdr'
+                  ? 'HDR'
                   : `Super-Resolution (${scaleFactor}x)`}
               </strong>
             </div>

@@ -49,7 +49,7 @@ export default function Historico({
   const [historyList, setHistoryList] = useState(() =>
     getUserHistory(activeEmail)
   )
-  const [filterProcess, setFilterProcess] = useState('all') // 'all' | 'dehazing' | 'super-resolution'
+  const [filterProcess, setFilterProcess] = useState('all') // 'all' | 'dehazing' | 'super-resolution' | 'hdr'
   const [searchTerm, setSearchTerm] = useState('')
 
   // Sincroniza com o banco de dados Django via API REST ao abrir a tela
@@ -76,7 +76,15 @@ export default function Historico({
         String(item.process || '').toLowerCase().includes('super-resolution') ||
         String(item.process || '').toLowerCase().includes('esc')
 
-      const normalizedProcess = isSR ? 'super-resolution' : 'dehazing'
+      const isHDR =
+        item.process === 'hdr' ||
+        String(item.process || '').toLowerCase().includes('hdr')
+
+      const normalizedProcess = isSR
+        ? 'super-resolution'
+        : isHDR
+        ? 'hdr'
+        : 'dehazing'
 
       const matchFilter =
         filterProcess === 'all' || normalizedProcess === filterProcess
@@ -252,7 +260,10 @@ export default function Historico({
             >
               <span className="filter-dot dehaze-dot"></span>
               Dehazing (
-              {historyList.filter((i) => !String(i.process || '').toLowerCase().includes('super-resolution') && !String(i.process || '').toLowerCase().includes('esc')).length})
+              {historyList.filter((i) => {
+                const p = String(i.process || '').toLowerCase()
+                return !p.includes('super-resolution') && !p.includes('esc') && !p.includes('hdr')
+              }).length})
             </button>
             <button
               type="button"
@@ -261,7 +272,22 @@ export default function Historico({
             >
               <span className="filter-dot sr-dot"></span>
               Super-Resolution (
-              {historyList.filter((i) => String(i.process || '').toLowerCase().includes('super-resolution') || String(i.process || '').toLowerCase().includes('esc')).length})
+              {historyList.filter((i) => {
+                const p = String(i.process || '').toLowerCase()
+                return p.includes('super-resolution') || p.includes('esc')
+              }).length})
+            </button>
+            <button
+              type="button"
+              className={`filter-tab ${filterProcess === 'hdr' ? 'active' : ''}`}
+              onClick={() => setFilterProcess('hdr')}
+            >
+              <span className="filter-dot hdr-dot"></span>
+              HDR (
+              {historyList.filter((i) => {
+                const p = String(i.process || '').toLowerCase()
+                return p.includes('hdr')
+              }).length})
             </button>
           </div>
 
@@ -315,12 +341,54 @@ export default function Historico({
                 <div className="history-card-header">
                   <div
                     className={`process-pill ${
-                      item.process === 'dehazing'
-                        ? 'pill-dehazing'
-                        : 'pill-super-resolution'
+                      item.process === 'super-resolution' ||
+                      String(item.process || '').toLowerCase().includes('super-resolution') ||
+                      String(item.process || '').toLowerCase().includes('esc')
+                        ? 'pill-super-resolution'
+                        : item.process === 'hdr' ||
+                          String(item.process || '').toLowerCase().includes('hdr')
+                        ? 'pill-hdr'
+                        : 'pill-dehazing'
                     }`}
                   >
-                    {item.process === 'dehazing' ? (
+                    {item.process === 'super-resolution' ||
+                    String(item.process || '').toLowerCase().includes('super-resolution') ||
+                    String(item.process || '').toLowerCase().includes('esc') ? (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                      </svg>
+                    ) : item.process === 'hdr' ||
+                      String(item.process || '').toLowerCase().includes('hdr') ? (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 2v2" />
+                        <path d="M12 20v2" />
+                        <path d="m4.93 4.93 1.41 1.41" />
+                        <path d="m17.66 17.66 1.41 1.41" />
+                        <path d="M2 12h2" />
+                        <path d="M20 12h2" />
+                        <path d="m6.34 17.66-1.41 1.41" />
+                        <path d="m19.07 4.93-1.41 1.41" />
+                      </svg>
+                    ) : (
                       <svg
                         width="14"
                         height="14"
@@ -334,19 +402,6 @@ export default function Historico({
                         <path d="M2 8c2.5-2 5.5-2 8 0s5.5 2 8 0" />
                         <path d="M2 13c2.5-2 5.5-2 8 0s5.5 2 8 0" />
                         <path d="M2 18c2.5-2 5.5-2 8 0s5.5 2 8 0" />
-                      </svg>
-                    ) : (
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
                       </svg>
                     )}
                     <span>{item.processLabel}</span>

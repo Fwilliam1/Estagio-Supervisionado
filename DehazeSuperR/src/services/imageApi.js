@@ -84,5 +84,45 @@ export const imageApi = {
       throw error
     }
   },
+
+  /**
+   * Executa a inferência ou processamento de HDR no backend.
+   * @param {File} imageFile - Arquivo de imagem enviado pelo usuário.
+   * @returns {Promise<Object>} Resultado do processamento com imagem Base64 e metadados.
+   */
+  async processHdr(imageFile) {
+    const token = localStorage.getItem('dsr_token')
+    if (!token) {
+      throw new Error('Usuário não autenticado. Por favor, realize login novamente.')
+    }
+
+    const formData = new FormData()
+    formData.append('imagem', imageFile)
+    formData.append('algoritmo', 'hdr')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/processar/hdr/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.mensagem || 'Erro ao processar a imagem com o algoritmo de HDR.')
+      }
+
+      return data
+    } catch (error) {
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        throw new Error('Não foi possível conectar ao servidor backend (Django). Verifique se ele está rodando.')
+      }
+      throw error
+    }
+  },
 }
+
 
