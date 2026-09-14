@@ -64,17 +64,33 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-# Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'dsr_db',
-        'USER': 'root',
-        'PASSWORD': 'root',  # <-- Coloque sua senha real do MySQL Workbench
-        'HOST': '127.0.0.1',
-        'PORT': '3306',
+# Database: tenta MySQL; se indisponível (ou rodando em máquina sem MySQL), faz fallback para SQLite
+USE_SQLITE = False
+try:
+    import socket
+    with socket.create_connection(('127.0.0.1', 3306), timeout=0.3):
+        pass
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': 'dsr_db',
+            'USER': 'root',
+            'PASSWORD': 'root',
+            'HOST': '127.0.0.1',
+            'PORT': '3306',
+        }
     }
-}
+except Exception:
+    USE_SQLITE = True
+
+if USE_SQLITE:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'dsr_db.sqlite3',
+        }
+    }
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {

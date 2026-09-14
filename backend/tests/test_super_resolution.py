@@ -33,27 +33,29 @@ class SuperResolutionTestCase(TestCase):
         self.img.save(buffer, format='PNG')
         self.img_bytes = buffer.getvalue()
 
-    def test_servico_super_resolucao_x2(self):
-        resultado = SuperResolutionService.processar_imagem(self.img_bytes, scale=2)
-        self.assertEqual(resultado["largura_original"], 64)
-        self.assertEqual(resultado["altura_original"], 64)
-        self.assertEqual(resultado["largura_processada"], 128)
-        self.assertEqual(resultado["altura_processada"], 128)
-        self.assertEqual(resultado["escala"], 2)
-        self.assertTrue(resultado["imagem_processada_base64"].startswith("data:image/png;base64,"))
-        self.assertGreater(len(resultado["imagem_processada_bytes"]), 0)
+    def test_servico_dmnet_x2_x3_x4(self):
+        for scale in (2, 3, 4):
+            resultado = SuperResolutionService.processar_imagem(self.img_bytes, scale=scale, model_name='DMNet')
+            self.assertEqual(resultado["largura_original"], 64)
+            self.assertEqual(resultado["altura_original"], 64)
+            self.assertEqual(resultado["largura_processada"], 64 * scale)
+            self.assertEqual(resultado["altura_processada"], 64 * scale)
+            self.assertEqual(resultado["escala"], scale)
+            self.assertEqual(resultado["modelo"], "DMNet")
+            self.assertTrue(resultado["imagem_processada_base64"].startswith("data:image/png;base64,"))
+            self.assertGreater(len(resultado["imagem_processada_bytes"]), 0)
 
-    def test_servico_super_resolucao_x3(self):
-        resultado = SuperResolutionService.processar_imagem(self.img_bytes, scale=3)
-        self.assertEqual(resultado["largura_processada"], 192)
-        self.assertEqual(resultado["altura_processada"], 192)
-        self.assertEqual(resultado["escala"], 3)
-
-    def test_servico_super_resolucao_x4(self):
-        resultado = SuperResolutionService.processar_imagem(self.img_bytes, scale=4)
-        self.assertEqual(resultado["largura_processada"], 256)
-        self.assertEqual(resultado["altura_processada"], 256)
-        self.assertEqual(resultado["escala"], 4)
+    def test_servico_esc_x2_x3_x4(self):
+        for scale in (2, 3, 4):
+            resultado = SuperResolutionService.processar_imagem(self.img_bytes, scale=scale, model_name='ESC')
+            self.assertEqual(resultado["largura_original"], 64)
+            self.assertEqual(resultado["altura_original"], 64)
+            self.assertEqual(resultado["largura_processada"], 64 * scale)
+            self.assertEqual(resultado["altura_processada"], 64 * scale)
+            self.assertEqual(resultado["escala"], scale)
+            self.assertEqual(resultado["modelo"], "ESC")
+            self.assertTrue(resultado["imagem_processada_base64"].startswith("data:image/png;base64,"))
+            self.assertGreater(len(resultado["imagem_processada_bytes"]), 0)
 
     def test_endpoint_super_resolucao_sem_token_retorna_401(self):
         upload_file = io.BytesIO(self.img_bytes)
@@ -64,13 +66,13 @@ class SuperResolutionTestCase(TestCase):
         )
         self.assertEqual(response.status_code, 401)
 
-    def test_endpoint_super_resolucao_com_token_sucesso(self):
+    def test_endpoint_super_resolucao_com_token_dmnet_sucesso(self):
         upload_file = io.BytesIO(self.img_bytes)
-        upload_file.name = "teste_foto.png"
+        upload_file.name = "teste_dmnet.png"
 
         response = self.client.post(
             '/api/processar/super-resolution/',
-            {'imagem': upload_file, 'scale': 2},
+            {'imagem': upload_file, 'scale': 2, 'model': 'DMNet'},
             **self.auth_headers
         )
 
@@ -78,12 +80,32 @@ class SuperResolutionTestCase(TestCase):
         data = response.json()
         self.assertEqual(data["status"], "sucesso")
         self.assertEqual(data["dados"]["escala"], 2)
+        self.assertEqual(data["dados"]["modelo"], "DMNet")
         self.assertEqual(data["dados"]["largura_processada"], 128)
         self.assertEqual(data["dados"]["altura_processada"], 128)
 
         # Verifica se gravou no banco de dados
         self.assertEqual(Imagem.objects.filter(usuario=self.usuario).count(), 1)
         img_db = Imagem.objects.first()
-        self.assertEqual(img_db.nomeArquivo, "teste_foto.png")
+        self.assertEqual(img_db.nomeArquivo, "teste_dmnet.png")
         self.assertEqual(img_db.resolucao, "128x128")
+        self.assertIn("DMNet", img_db.algoritmo.tipo)
         self.assertIsNotNone(img_db.dadosProcessada)
+
+    def test_endpoint_super_resolucao_com_token_esc_sucesso(self):
+        upload_file = io.BytesIO(self.img_bytes)
+        upload_file.name = "teste_esc.png"
+
+        response = self.client.post(
+            '/api/processar/super-resolution/',
+            {'imagem': upload_file, 'scale': 3, 'model': 'ESC'},
+            **self.auth_headers
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "sucesso")
+        self.assertEqual(data["dados"]["escala"], 3)
+        self.assertEqual(data["dados"]["modelo"], "ESC")
+        self.assertEqual(data["dados"]["largura_processada"], 192)
+        self.assertEqual(data["dados"]["altura_processada"], 192)

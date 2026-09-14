@@ -52,3 +52,13 @@ class ModelsConfig(AppConfig):
 
     def ready(self):
         post_migrate.connect(criar_usuario_admin_default, sender=self)
+
+        # Aplica migrações automaticamente ao iniciar o servidor se houver pendências
+        import sys
+        if 'runserver' in sys.argv:
+            try:
+                from django.core.management import call_command
+                call_command('migrate', interactive=False, verbosity=0)
+            except Exception as e:
+                print(f"[DSR_DB] Aviso ao aplicar migrações automáticas: {e}")
+

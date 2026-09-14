@@ -36,7 +36,9 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
 
         escala = request.POST.get('scale') or request.POST.get('escala') or 2
         tipo_algoritmo = request.POST.get('algoritmo') or request.POST.get('algorithm') or "super-resolution"
+        modelo = request.POST.get('modelo') or request.POST.get('model') or ('ESC' if 'esc' in tipo_algoritmo.lower() else 'DMNet')
         opcoes = {
+            'modelo': modelo,
             'encoder': request.POST.get('encoder', 'vits'),
             'grayscale': request.POST.get('grayscale', 'true').lower() in ('true', '1', 'yes'),
             'colormap': request.POST.get('colormap', 'Spectral_r'),
@@ -65,7 +67,9 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
                 nome_arquivo = body.get('nome_arquivo') or body.get('filename') or body.get('fileName') or nome_arquivo
                 escala = body.get('scale') or body.get('escala') or 2
                 tipo_algoritmo = body.get('algoritmo') or body.get('algorithm') or body.get('process') or "super-resolution"
+                modelo = body.get('modelo') or body.get('model') or ('ESC' if 'esc' in tipo_algoritmo.lower() else 'DMNet')
                 opcoes = {
+                    'modelo': modelo,
                     'encoder': body.get('encoder', 'vits'),
                     'grayscale': str(body.get('grayscale', 'true')).lower() in ('true', '1', 'yes'),
                     'colormap': body.get('colormap', 'Spectral_r'),
@@ -90,7 +94,7 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
 def processamento_router_view(request: HttpRequest) -> JsonResponse:
     """
     Roteador genérico para processamento de imagem (/api/processar/).
-    Encaminha para Dehazing (Depth Anything V2 + UDPNet FSNet OTS) ou Super-Resolução (ESC).
+    Encaminha para Dehazing (Depth Anything V2 + UDPNet FSNet OTS) ou Super-Resolução (DMNet ou ESC).
     """
     if request.method != 'POST':
         return JsonResponse({
@@ -105,7 +109,7 @@ def processamento_router_view(request: HttpRequest) -> JsonResponse:
         elif tipo_algoritmo.lower() in ('depth', 'profundidade', 'depth-anything'):
             return _executar_depth(request, image_bytes, nome_arquivo, opcoes)
         else:
-            return _executar_super_resolution(request, image_bytes, nome_arquivo, escala)
+            return _executar_super_resolution(request, image_bytes, nome_arquivo, escala, opcoes.get('modelo', 'DMNet'))
     except ServiceException as e:
         return JsonResponse({"status": "erro", "mensagem": e.message}, status=e.status_code)
     except Exception as e:
@@ -116,7 +120,7 @@ def processamento_router_view(request: HttpRequest) -> JsonResponse:
 @requer_autenticacao
 def super_resolution_view(request: HttpRequest) -> JsonResponse:
     """
-    Endpoint para aplicar Super-Resolução com a arquitetura ESC (x2, x3, x4).
+    Endpoint para aplicar Super-Resolução com as arquiteturas DMNet ou ESC (x2, x3, x4).
     POST /api/processar/super-resolution/
     """
     if request.method != 'POST':
@@ -126,30 +130,39 @@ def super_resolution_view(request: HttpRequest) -> JsonResponse:
         }, status=405)
 
     try:
-        image_bytes, nome_arquivo, escala, tipo_algoritmo, _ = _extrair_imagem_e_parametros(request)
-        return _executar_super_resolution(request, image_bytes, nome_arquivo, escala)
+        image_bytes, nome_arquivo, escala, tipo_algoritmo, opcoes = _extrair_imagem_e_parametros(request)
+        return _executar_super_resolution(request, image_bytes, nome_arquivo, escala, opcoes.get('modelo', 'DMNet'))
     except ServiceException as e:
         return JsonResponse({"status": "erro", "mensagem": e.message}, status=e.status_code)
     except Exception as e:
         return JsonResponse({"status": "erro", "mensagem": f"Erro interno durante super-resolução: {str(e)}"}, status=500)
 
 
-def _executar_super_resolution(request: HttpRequest, image_bytes: bytes, nome_arquivo: str, escala: int) -> JsonResponse:
+def _executar_super_resolution(
+    request: HttpRequest,
+    image_bytes: bytes,
+    nome_arquivo: str,
+    escala: int,
+    modelo: str = 'DMNet'
+) -> JsonResponse:
+    modelo_norm = SuperResolutionService.normalizar_nome_modelo(modelo)
+    modelo_display = 'DMNet' if modelo_norm == 'dmnet' else 'ESC'
+
     resultado = SuperResolutionService.processar_imagem(
         image_bytes=image_bytes,
-        scale=escala
+        scale=escala,
+        model_name=modelo_display
     )
 
     usuario = request.usuario
+    pesos_nome = f"DMNet_X{escala}.pth" if modelo_norm == 'dmnet' else f"ESC_DIV2K_X{escala}.pth"
     algoritmo_instancia, _ = Algoritmo.objects.get_or_create(
-        tipo=f"ESC_SuperResolution_X{escala}",
+        tipo=f"{modelo_display}_SuperResolution_X{escala}",
         defaults={
             "parametros": json.dumps({
-                "modelo": "ESC",
-                "dataset_treino": "DIV2K",
+                "modelo": modelo_display,
                 "escala": escala,
-                "pesos": f"ESC_DIV2K_X{escala}.pth",
-                "attn_type": "SDPA"
+                "pesos": pesos_nome,
             })
         }
     )
@@ -171,7 +184,7 @@ def _executar_super_resolution(request: HttpRequest, image_bytes: bytes, nome_ar
 
     return JsonResponse({
         "status": "sucesso",
-        "mensagem": f"Super-resolução {escala}x aplicada com sucesso via rede ESC!",
+        "mensagem": f"Super-resolução {escala}x aplicada com sucesso via rede {modelo_display}!",
         "dados": {
             "imagem_id": registro_imagem.id,
             "nome_arquivo": nome_arquivo,
@@ -183,6 +196,7 @@ def _executar_super_resolution(request: HttpRequest, image_bytes: bytes, nome_ar
             "largura_processada": resultado["largura_processada"],
             "altura_processada": resultado["altura_processada"],
             "escala": resultado["escala"],
+            "modelo": resultado["modelo"],
             "tempo_execucao_segundos": resultado["tempo_execucao_segundos"],
             "tamanho_original_kb": resultado["tamanho_original_kb"],
             "tamanho_processado_kb": resultado["tamanho_processado_kb"],

@@ -74,7 +74,8 @@ export default function Historico({
       const isSR =
         item.process === 'super-resolution' ||
         String(item.process || '').toLowerCase().includes('super-resolution') ||
-        String(item.process || '').toLowerCase().includes('esc')
+        String(item.process || '').toLowerCase().includes('esc') ||
+        String(item.process || '').toLowerCase().includes('dmnet')
 
       const normalizedProcess = isSR ? 'super-resolution' : 'dehazing'
 
@@ -252,7 +253,10 @@ export default function Historico({
             >
               <span className="filter-dot dehaze-dot"></span>
               Dehazing (
-              {historyList.filter((i) => !String(i.process || '').toLowerCase().includes('super-resolution') && !String(i.process || '').toLowerCase().includes('esc')).length})
+              {historyList.filter((i) => {
+                const s = String(i.process || '').toLowerCase()
+                return !s.includes('super-resolution') && !s.includes('esc') && !s.includes('dmnet')
+              }).length})
             </button>
             <button
               type="button"
@@ -261,7 +265,10 @@ export default function Historico({
             >
               <span className="filter-dot sr-dot"></span>
               Super-Resolution (
-              {historyList.filter((i) => String(i.process || '').toLowerCase().includes('super-resolution') || String(i.process || '').toLowerCase().includes('esc')).length})
+              {historyList.filter((i) => {
+                const s = String(i.process || '').toLowerCase()
+                return s.includes('super-resolution') || s.includes('esc') || s.includes('dmnet')
+              }).length})
             </button>
           </div>
 

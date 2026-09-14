@@ -183,9 +183,12 @@ export async function saveHistoryItem(userEmail, item) {
   const isSR =
     item.process === 'super-resolution' ||
     String(item.process || '').toLowerCase().includes('super-resolution') ||
-    String(item.process || '').toLowerCase().includes('esc')
+    String(item.process || '').toLowerCase().includes('esc') ||
+    String(item.process || '').toLowerCase().includes('dmnet')
 
   const scale = item.scale ? Number(item.scale) : 2
+  const rawDesc = (String(item.process || '') + ' ' + String(item.processLabel || '')).toLowerCase()
+  const model = item.model || (rawDesc.includes('esc') ? 'ESC' : 'DMNet')
 
   const finalId = item.id || (item.db_id ? `db_${item.db_id}` : `hist_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`)
 
@@ -199,9 +202,10 @@ export async function saveHistoryItem(userEmail, item) {
     inputImage: item.inputImage, // Base64 dataURL da imagem original
     processedImage: item.processedImage || null, // Base64 dataURL da imagem processada
     process: isSR ? 'super-resolution' : 'dehazing',
-    scale: scale,
+    scale: isSR ? scale : undefined,
+    model: isSR ? model : undefined,
     processLabel: isSR
-      ? `Super-Resolution (ESC ${scale}x)`
+      ? `Super-Resolution (${model} ${scale}x)`
       : 'Image Dehazing',
     fileName: item.fileName || 'imagem_upload.png',
     fileSize: item.fileSize || '1.0 MB',
@@ -219,12 +223,12 @@ export async function saveHistoryItem(userEmail, item) {
   const updatedList = [newItem, ...filteredList].slice(0, 50)
   localStorage.setItem(key, JSON.stringify(updatedList))
 
-  // Se o item já foi gravado no banco durante a inferência na API, não faz POST redundante
-  if (item.skipApiSave || item.db_id) {
+  // 2. Se a imagem já foi salva no backend durante a inferência (skipApiSave: true), não precisa reenviar
+  if (item.skipApiSave) {
     return newItem
   }
 
-  // 2. Persiste na API REST / Banco de Dados Django em segundo plano apenas se não foi salvo pelo backend
+  // 3. Envia para a API REST Django para persistir no banco de dados
   try {
     const apiResponse = await fetch(`${API_BASE_URL}/imagens/salvar/`, {
       method: 'POST',
@@ -237,6 +241,7 @@ export async function saveHistoryItem(userEmail, item) {
         processedImage: item.processedImage,
         process: newItem.process,
         scale: newItem.scale,
+        model: newItem.model,
         fileName: item.fileName,
         fileSize: item.fileSize,
         dimensions: item.dimensions,

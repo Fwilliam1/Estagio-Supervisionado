@@ -23,10 +23,16 @@ export default function Home({
   const [selectedAlgorithm, setSelectedAlgorithm] = useState(() => {
     const raw = String(pendingHistoryItem?.process || '').toLowerCase()
     const rawLabel = String(pendingHistoryItem?.processLabel || '').toLowerCase()
-    if (raw.includes('super-resolution') || raw.includes('esc') || rawLabel.includes('super-resolution')) {
+    if (raw.includes('super-resolution') || raw.includes('esc') || raw.includes('dmnet') || rawLabel.includes('super-resolution')) {
       return 'super-resolution'
     }
     return 'dehazing'
+  })
+  const [selectedModel, setSelectedModel] = useState(() => {
+    if (pendingHistoryItem?.model) return pendingHistoryItem.model
+    const raw = (String(pendingHistoryItem?.process || '') + ' ' + String(pendingHistoryItem?.processLabel || '')).toLowerCase()
+    if (raw.includes('esc')) return 'ESC'
+    return 'DMNet'
   })
   const [scaleFactor, setScaleFactor] = useState(() => {
     if (pendingHistoryItem?.scale) return Number(pendingHistoryItem.scale)
@@ -125,9 +131,11 @@ export default function Home({
           imagem_base64: inputSrc,
           nome_arquivo: currentMeta?.name || 'imagem_upload.png',
           algoritmo: algorithm,
+          modelo: selectedModel,
+          model: selectedModel,
           encoder: 'vits',
           grayscale: true,
-          scale: 2,
+          scale: scaleFactor,
         }
 
         const response = await fetch(endpoint, {
@@ -231,6 +239,8 @@ export default function Home({
           inputImage: inputSrc,
           processedImage: resultDataUrl,
           process: algorithm,
+          scale: algorithm === 'super-resolution' ? scaleFactor : undefined,
+          model: algorithm === 'super-resolution' ? selectedModel : undefined,
           fileName: currentMeta?.name || 'imagem_processada.png',
           fileSize: fileSizeFormatted,
           fileSizeInBytes:
@@ -253,9 +263,19 @@ export default function Home({
       const isSR =
         rawProcess.includes('super-resolution') ||
         rawProcess.includes('esc') ||
+        rawProcess.includes('dmnet') ||
         rawLabel.includes('super-resolution')
 
       const algo = isSR ? 'super-resolution' : 'dehazing'
+
+      let model = 'DMNet'
+      if (pendingHistoryItem.model) {
+        model = pendingHistoryItem.model
+      } else if (rawProcess.includes('esc') || rawLabel.includes('esc')) {
+        model = 'ESC'
+      } else if (rawProcess.includes('dmnet') || rawLabel.includes('dmnet')) {
+        model = 'DMNet'
+      }
 
       let scale = 2
       if (pendingHistoryItem.scale) {
@@ -277,6 +297,7 @@ export default function Home({
       }
 
       setSelectedAlgorithm(algo)
+      setSelectedModel(model)
       setScaleFactor(scale)
       setSelectedFile(meta)
       setOriginalImageUrl(src)
@@ -284,7 +305,7 @@ export default function Home({
       setProcessMeta(null)
       setErrorMessage('')
       setToastMessage(
-        `Imagem "${meta.name}" carregada com algoritmo "${isSR ? `Super-Resolução (${scale}x)` : 'Image Dehazing'}" pré-selecionado!`
+        `Imagem "${meta.name}" carregada com algoritmo "${isSR ? `Super-Resolução (${model} ${scale}x)` : 'Image Dehazing'}" pré-selecionado!`
       )
 
       if (onClearPendingHistoryItem) {
@@ -363,7 +384,7 @@ export default function Home({
 
       let resultado
       if (selectedAlgorithm === 'super-resolution') {
-        resultado = await imageApi.processSuperResolution(fileToSend, scaleFactor)
+        resultado = await imageApi.processSuperResolution(fileToSend, scaleFactor, selectedModel)
       } else {
         resultado = await imageApi.processDehazing(fileToSend)
       }
@@ -389,7 +410,8 @@ export default function Home({
           processedImage: resultado.dados.imagem_base64,
           process: selectedAlgorithm,
           scale: selectedAlgorithm === 'super-resolution' ? scaleFactor : undefined,
-          fileName: currentMeta?.name || (selectedAlgorithm === 'super-resolution' ? 'imagem_super_res.png' : 'imagem_dehazed.png'),
+          model: selectedAlgorithm === 'super-resolution' ? selectedModel : undefined,
+          fileName: currentMeta?.name || (selectedAlgorithm === 'super-resolution' ? `imagem_super_res_${selectedModel}.png` : 'imagem_dehazed.png'),
           fileSize: fileSizeFormatted,
           fileSizeInBytes: typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
           dimensions: resultado.dados.resolucao_processada || 'N/A',
@@ -411,7 +433,7 @@ export default function Home({
     const link = document.createElement('a')
     link.href = processedImageUrl
     const baseName = selectedFile?.name ? selectedFile.name.replace(/\.[^/.]+$/, '') : 'resultado'
-    const scaleSuffix = selectedAlgorithm === 'super-resolution' ? `_x${scaleFactor}_ESC` : '_dehazed'
+    const scaleSuffix = selectedAlgorithm === 'super-resolution' ? `_x${scaleFactor}_${selectedModel}` : '_dehazed'
     link.download = `${baseName}${scaleSuffix}.png`
     document.body.appendChild(link)
     link.click()
@@ -632,50 +654,89 @@ export default function Home({
             </div>
           </div>
 
-          {/* Seletor de Fator de Escala (Exibido quando Super-Resolution estiver ativo) */}
+          {/* Opções de Super-Resolução: Modelo e Escala (Exibido quando Super-Resolution estiver ativo) */}
           {selectedAlgorithm === 'super-resolution' && (
-            <div className="scale-selector-wrapper">
-              <div className="scale-selector-title">
-                <span className="label">Fator de Escala do Modelo</span>
-                <span className="desc">Selecione o multiplicador de resolução para a reconstrução:</span>
+            <div className="sr-options-container">
+              {/* Seletor de Modelo */}
+              <div className="scale-selector-wrapper">
+                <div className="scale-selector-title">
+                  <span className="label">Rede Neural / Arquitetura</span>
+                  <span className="desc">Selecione o modelo profundo de Super-Resolução:</span>
+                </div>
+                <div className="scale-options-pills">
+                  <button
+                    type="button"
+                    className={`scale-pill-btn model-pill-btn ${selectedModel === 'DMNet' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedModel('DMNet')
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>DMNet</span>
+                    <small className="pill-subtext">Dual Multi-scale Attention</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`scale-pill-btn model-pill-btn ${selectedModel === 'ESC' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedModel('ESC')
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>ESC</span>
+                    <small className="pill-subtext">Efficient Super-Resolution</small>
+                  </button>
+                </div>
               </div>
-              <div className="scale-options-pills">
-                <button
-                  type="button"
-                  className={`scale-pill-btn ${scaleFactor === 2 ? 'active' : ''}`}
-                  onClick={() => {
-                    setScaleFactor(2)
-                    setProcessedImageUrl(null)
-                    setProcessMeta(null)
-                  }}
-                  disabled={isProcessing}
-                >
-                  <span>X2</span>
-                </button>
-                <button
-                  type="button"
-                  className={`scale-pill-btn ${scaleFactor === 3 ? 'active' : ''}`}
-                  onClick={() => {
-                    setScaleFactor(3)
-                    setProcessedImageUrl(null)
-                    setProcessMeta(null)
-                  }}
-                  disabled={isProcessing}
-                >
-                  <span>X3</span>
-                </button>
-                <button
-                  type="button"
-                  className={`scale-pill-btn ${scaleFactor === 4 ? 'active' : ''}`}
-                  onClick={() => {
-                    setScaleFactor(4)
-                    setProcessedImageUrl(null)
-                    setProcessMeta(null)
-                  }}
-                  disabled={isProcessing}
-                >
-                  <span>X4</span>
-                </button>
+
+              {/* Seletor de Fator de Escala */}
+              <div className="scale-selector-wrapper">
+                <div className="scale-selector-title">
+                  <span className="label">Fator de Escala do Modelo</span>
+                  <span className="desc">Selecione o multiplicador de resolução para a reconstrução ({selectedModel}):</span>
+                </div>
+                <div className="scale-options-pills">
+                  <button
+                    type="button"
+                    className={`scale-pill-btn ${scaleFactor === 2 ? 'active' : ''}`}
+                    onClick={() => {
+                      setScaleFactor(2)
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>X2</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`scale-pill-btn ${scaleFactor === 3 ? 'active' : ''}`}
+                    onClick={() => {
+                      setScaleFactor(3)
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>X3</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`scale-pill-btn ${scaleFactor === 4 ? 'active' : ''}`}
+                    onClick={() => {
+                      setScaleFactor(4)
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>X4</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

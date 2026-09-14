@@ -6,12 +6,13 @@ const API_BASE_URL = 'http://127.0.0.1:8000/api'
 
 export const imageApi = {
   /**
-   * Executa a inferência de Super-Resolução com a rede neural ESC no backend.
+   * Executa a inferência de Super-Resolução com a rede neural (DMNet ou ESC) no backend.
    * @param {File} imageFile - Arquivo de imagem enviado pelo usuário.
    * @param {number} scale - Fator de ampliação (2, 3 ou 4).
+   * @param {string} model - Arquitetura de rede ('DMNet' ou 'ESC').
    * @returns {Promise<Object>} Resultado da inferência com imagem Base64 e metadados.
    */
-  async processSuperResolution(imageFile, scale = 2) {
+  async processSuperResolution(imageFile, scale = 2, model = 'DMNet') {
     const token = localStorage.getItem('dsr_token')
     if (!token) {
       throw new Error('Usuário não autenticado. Por favor, realize login novamente.')
@@ -20,6 +21,8 @@ export const imageApi = {
     const formData = new FormData()
     formData.append('imagem', imageFile)
     formData.append('scale', scale)
+    formData.append('modelo', model)
+    formData.append('model', model)
     formData.append('algoritmo', 'super-resolution')
 
     try {
