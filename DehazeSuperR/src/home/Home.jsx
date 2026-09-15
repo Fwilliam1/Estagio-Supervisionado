@@ -32,10 +32,25 @@ export default function Home({
     return 'dehazing'
   })
   const [selectedModel, setSelectedModel] = useState(() => {
-    if (pendingHistoryItem?.model) return pendingHistoryItem.model
+    if (pendingHistoryItem?.model && ['DMNet', 'ESC'].includes(pendingHistoryItem.model)) return pendingHistoryItem.model
     const raw = (String(pendingHistoryItem?.process || '') + ' ' + String(pendingHistoryItem?.processLabel || '')).toLowerCase()
     if (raw.includes('esc')) return 'ESC'
     return 'DMNet'
+  })
+  const [selectedDehazingModel, setSelectedDehazingModel] = useState(() => {
+    if (pendingHistoryItem?.dehazingModel) return pendingHistoryItem.dehazingModel
+    if (pendingHistoryItem?.model && ['ConvIR', 'UDPNet'].includes(pendingHistoryItem.model)) {
+      return pendingHistoryItem.model
+    }
+    const raw = (
+      String(pendingHistoryItem?.process || '') +
+      ' ' +
+      String(pendingHistoryItem?.processLabel || '') +
+      ' ' +
+      String(pendingHistoryItem?.model || '')
+    ).toLowerCase()
+    if (raw.includes('convir')) return 'ConvIR'
+    return 'UDPNet'
   })
   const [scaleFactor, setScaleFactor] = useState(() => {
     if (pendingHistoryItem?.scale) return Number(pendingHistoryItem.scale)
@@ -138,8 +153,8 @@ export default function Home({
           imagem_base64: inputSrc,
           nome_arquivo: currentMeta?.name || 'imagem_upload.png',
           algoritmo: algorithm,
-          modelo: selectedModel,
-          model: selectedModel,
+          modelo: algorithm === 'dehazing' ? selectedDehazingModel : selectedModel,
+          model: algorithm === 'dehazing' ? selectedDehazingModel : selectedModel,
           encoder: 'vits',
           grayscale: true,
           scale: scaleFactor,
@@ -154,7 +169,8 @@ export default function Home({
         if (response.ok) {
           const data = await response.json()
           if (data?.dados?.imagem_base64) {
-            resultDataUrl = data.dados.imagem_base64
+            const rawB64 = data.dados.imagem_base64
+            resultDataUrl = rawB64.startsWith('data:') ? rawB64 : `data:image/png;base64,${rawB64}`
             imgWidth = data.dados.largura_processada || imgWidth
             imgHeight = data.dados.altura_processada || imgHeight
             createdImageId = data.dados.imagem_id || null
@@ -277,7 +293,8 @@ export default function Home({
           processedImage: resultDataUrl,
           process: algorithm,
           scale: algorithm === 'super-resolution' ? scaleFactor : undefined,
-          model: algorithm === 'super-resolution' ? selectedModel : undefined,
+          model: algorithm === 'super-resolution' ? selectedModel : (algorithm === 'dehazing' ? selectedDehazingModel : undefined),
+          dehazingModel: algorithm === 'dehazing' ? selectedDehazingModel : undefined,
           fileName: currentMeta?.name || 'imagem_processada.png',
           fileSize: fileSizeFormatted,
           fileSizeInBytes:
@@ -309,12 +326,21 @@ export default function Home({
       const algo = isSR ? 'super-resolution' : isHDR ? 'hdr' : 'dehazing'
 
       let model = 'DMNet'
-      if (pendingHistoryItem.model) {
+      if (pendingHistoryItem.model && ['DMNet', 'ESC'].includes(pendingHistoryItem.model)) {
         model = pendingHistoryItem.model
       } else if (rawProcess.includes('esc') || rawLabel.includes('esc')) {
         model = 'ESC'
       } else if (rawProcess.includes('dmnet') || rawLabel.includes('dmnet')) {
         model = 'DMNet'
+      }
+
+      let dehazingModel = 'UDPNet'
+      if (pendingHistoryItem.dehazingModel) {
+        dehazingModel = pendingHistoryItem.dehazingModel
+      } else if (rawProcess.includes('convir') || rawLabel.includes('convir')) {
+        dehazingModel = 'ConvIR'
+      } else if (pendingHistoryItem.model && ['ConvIR', 'UDPNet'].includes(pendingHistoryItem.model)) {
+        dehazingModel = pendingHistoryItem.model
       }
 
       let scale = 2
@@ -338,6 +364,7 @@ export default function Home({
 
       setSelectedAlgorithm(algo)
       setSelectedModel(model)
+      setSelectedDehazingModel(dehazingModel)
       setScaleFactor(scale)
       setSelectedFile(meta)
       setOriginalImageUrl(src)
@@ -350,7 +377,7 @@ export default function Home({
             ? `Super-Resolução (${model} ${scale}x)`
             : isHDR
             ? 'HDR'
-            : 'Image Dehazing'
+            : `Image Dehazing (${dehazingModel})`
         }" pré-selecionado!`
       )
 
@@ -434,10 +461,15 @@ export default function Home({
       } else if (selectedAlgorithm === 'hdr') {
         resultado = await imageApi.processHdr(fileToSend)
       } else {
-        resultado = await imageApi.processDehazing(fileToSend)
+        resultado = await imageApi.processDehazing(fileToSend, selectedDehazingModel)
       }
 
-      setProcessedImageUrl(resultado.dados.imagem_base64)
+      const rawB64 = resultado?.dados?.imagem_base64
+      const processedUrl = rawB64
+        ? (rawB64.startsWith('data:') ? rawB64 : `data:image/png;base64,${rawB64}`)
+        : null
+
+      setProcessedImageUrl(processedUrl)
       setProcessMeta(resultado.dados)
 
       // Salva a imagem no histórico individual do usuário
@@ -455,17 +487,18 @@ export default function Home({
           id: resultado?.dados?.imagem_id ? `db_${resultado.dados.imagem_id}` : undefined,
           skipApiSave: Boolean(resultado?.dados?.imagem_id),
           inputImage: originalImageUrl,
-          processedImage: resultado.dados.imagem_base64,
+          processedImage: processedUrl,
           process: selectedAlgorithm,
           scale: selectedAlgorithm === 'super-resolution' ? scaleFactor : undefined,
-          model: selectedAlgorithm === 'super-resolution' ? selectedModel : undefined,
+          model: selectedAlgorithm === 'super-resolution' ? selectedModel : selectedDehazingModel,
+          dehazingModel: selectedAlgorithm === 'dehazing' ? selectedDehazingModel : undefined,
           fileName:
             currentMeta?.name ||
             (selectedAlgorithm === 'super-resolution'
               ? `imagem_super_res_${selectedModel}.png`
               : selectedAlgorithm === 'hdr'
               ? 'imagem_hdr.png'
-              : 'imagem_dehazed.png'),
+              : `imagem_dehazed_${selectedDehazingModel}.png`),
           fileSize: fileSizeFormatted,
           fileSizeInBytes: typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
           dimensions: resultado.dados.resolucao_processada || 'N/A',
@@ -491,7 +524,7 @@ export default function Home({
         ? `_x${scaleFactor}_${selectedModel}`
         : selectedAlgorithm === 'hdr'
         ? '_hdr'
-        : '_dehazed'
+        : `_dehazed_${selectedDehazingModel}`
     link.download = `${baseName}${scaleSuffix}.png`
     document.body.appendChild(link)
     link.click()
@@ -755,6 +788,47 @@ export default function Home({
             </div>
           </div>
 
+          {/* Opções de Image Dehazing: Escolha de Arquitetura (Exibido quando Dehazing estiver ativo) */}
+          {selectedAlgorithm === 'dehazing' && (
+            <div className="sr-options-container">
+              {/* Seletor de Modelo Dehazing */}
+              <div className="scale-selector-wrapper">
+                <div className="scale-selector-title">
+                  <span className="label">Rede Neural / Arquitetura</span>
+                  <span className="desc">Selecione o modelo profundo de Dehazing:</span>
+                </div>
+                <div className="scale-options-pills">
+                  <button
+                    type="button"
+                    className={`scale-pill-btn model-pill-btn ${selectedDehazingModel === 'UDPNet' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedDehazingModel('UDPNet')
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>UDPNet</span>
+                    <small className="pill-subtext">Depth-Guided (FSNet + ViT-S)</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`scale-pill-btn model-pill-btn ${selectedDehazingModel === 'ConvIR' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedDehazingModel('ConvIR')
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>ConvIR</span>
+                    <small className="pill-subtext">Convolutional Restoration (OTS Small)</small>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Opções de Super-Resolução: Modelo e Escala (Exibido quando Super-Resolution estiver ativo) */}
           {selectedAlgorithm === 'super-resolution' && (
             <div className="sr-options-container">
@@ -963,10 +1037,10 @@ export default function Home({
                     <div className="spinner" style={{ width: '32px', height: '32px', borderTopColor: '#F06529', borderWidth: '3px' }}></div>
                     <p style={{ marginTop: '12px', color: '#F06529', fontWeight: 600 }}>
                       {selectedAlgorithm === 'super-resolution'
-                        ? `Processando Super-Resolução (${scaleFactor}x) na GPU...`
+                        ? `Processando Super-Resolução (${selectedModel} ${scaleFactor}x) na GPU...`
                         : selectedAlgorithm === 'hdr'
                         ? 'Processando HDR...'
-                        : 'Processando Dehazing...'}
+                        : `Processando Dehazing (${selectedDehazingModel})...`}
                     </p>
                   </div>
                 ) : processedImageUrl ? (
@@ -1004,10 +1078,10 @@ export default function Home({
               Algoritmo:{' '}
               <strong>
                 {selectedAlgorithm === 'dehazing'
-                  ? 'Image Dehazing'
+                  ? `Image Dehazing (${selectedDehazingModel})`
                   : selectedAlgorithm === 'hdr'
                   ? 'HDR'
-                  : `Super-Resolution (${scaleFactor}x)`}
+                  : `Super-Resolution (${selectedModel} ${scaleFactor}x)`}
               </strong>
             </div>
             <div className="action-buttons">

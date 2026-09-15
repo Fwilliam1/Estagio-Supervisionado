@@ -1,3 +1,4 @@
+import io
 import json
 import base64
 from typing import Dict, Any, Tuple
@@ -5,6 +6,7 @@ from django.http import JsonResponse, HttpRequest, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from models.imagem import Imagem
 from models.algoritmo import Algoritmo
+from services.hdr_service import HDRService
 from services.super_resolution_service import SuperResolutionService
 from services.depth_service import DepthAnythingService
 from services.dehazing_service import DehazingService
@@ -138,6 +140,8 @@ def processamento_router_view(request: HttpRequest) -> JsonResponse:
             return _executar_dehazing(request, image_bytes, nome_arquivo, opcoes)
         elif tipo_algoritmo.lower() in ('depth', 'profundidade', 'depth-anything'):
             return _executar_depth(request, image_bytes, nome_arquivo, opcoes)
+        elif tipo_algoritmo.lower() in ('hdr', 'safhdr'):
+            return _executar_hdr(request, image_bytes, nome_arquivo, opcoes)
         else:
             return _executar_super_resolution(request, image_bytes, nome_arquivo, escala, opcoes.get('modelo', 'DMNet'))
     except ServiceException as e:
@@ -477,3 +481,135 @@ def download_imagem_view(request: HttpRequest, imagem_id: int) -> HttpResponse:
     response['Content-Disposition'] = f'attachment; filename="{nome}"'
     return response
 
+
+
+
+
+from services.hdr_service import HDRService
+
+@csrf_exempt
+@requer_autenticacao
+def hdr_view(request: HttpRequest) -> JsonResponse:
+    """
+    Endpoint para processamento HDR e Tone Mapping (SAFHDR).
+    POST /api/processar/hdr/
+    """
+    if request.method != 'POST':
+        return JsonResponse({
+            "status": "erro",
+            "mensagem": f"Método {request.method} não permitido. Utilize POST para processar."
+        }, status=405)
+
+    try:
+        image_bytes, nome_arquivo, _, _, opcoes = _extrair_imagem_e_parametros(request)
+        return _executar_hdr(request, image_bytes, nome_arquivo, opcoes)
+    except ServiceException as e:
+        return JsonResponse({"status": "erro", "mensagem": e.message}, status=e.status_code)
+    except Exception as e:
+        return JsonResponse({"status": "erro", "mensagem": f"Erro interno durante processamento HDR: {str(e)}"}, status=500)
+
+
+def _executar_hdr(request: HttpRequest, image_bytes: bytes, nome_arquivo: str, opcoes: Dict[str, Any]) -> JsonResponse:
+
+    # Extrai parâmetros opcionais, caso enviados no POST
+    clip_limit = float(opcoes.get('clip_limit', 2.5))
+    tile_grid_size = int(opcoes.get('tile_grid_size', 8))
+
+    # Chama o serviço
+    resultado = HDRService.processar_imagem(
+        image_bytes=image_bytes,
+        clip_limit=clip_limit,
+        tile_grid_size=tile_grid_size
+    )
+
+    # Configuração dos metadados para salvar no banco
+    tipo_algoritmo_str = "SAFHDR_Logarithmic_ToneMapping"
+    algoritmo_params = {
+        "modelo": "SAFHDR",
+        "pesos": "model_tm_406392_G.pth",
+        "mu_law": 5000.0,
+        "clip_limit": clip_limit,
+        "tile_grid_size": tile_grid_size
+    }
+    msg_sucesso = "Processamento HDR aplicado com sucesso via SAFHDR!"
+
+    # Tratamento do formato da imagem
+    formato = "PNG"
+    if "." in nome_arquivo:
+        formato_extraido = nome_arquivo.rsplit(".", 1)[-1].upper()
+        formato = "JPEG" if formato_extraido == "JPG" else formato_extraido
+
+    # Garante compatibilidade de Data URI e bytes para retorno e persistência
+    b64_val = resultado.get("imagem_processada_base64", "")
+    if not b64_val.startswith("data:image/"):
+        img_bytes = resultado.get("imagem_processada_bytes")
+        if not img_bytes and "imagem_tonemapped" in resultado:
+            img_pil = resultado["imagem_tonemapped"]
+            buffer = io.BytesIO()
+            img_pil.save(buffer, format=formato if formato in ["PNG", "JPEG"] else "PNG")
+            img_bytes = buffer.getvalue()
+            resultado["imagem_processada_bytes"] = img_bytes
+
+        if img_bytes:
+            raw_b64 = base64.b64encode(img_bytes).decode('utf-8')
+            fmt_prefix = "jpeg" if formato.upper() in ["JPEG", "JPG"] else "png"
+            resultado["imagem_processada_base64"] = f"data:image/{fmt_prefix};base64,{raw_b64}"
+
+    orig_w = resultado.get("largura_original")
+    orig_h = resultado.get("altura_original")
+    if orig_w is None or orig_h is None:
+        if "dimensoes_originais" in resultado:
+            orig_w, orig_h = resultado["dimensoes_originais"]
+        else:
+            orig_w, orig_h = 0, 0
+
+    proc_w = resultado.get("largura_processada", orig_w)
+    proc_h = resultado.get("altura_processada", orig_h)
+    resultado["resolucao_original"] = resultado.get("resolucao_original", f"{orig_w}x{orig_h}")
+    resultado["resolucao_processada"] = resultado.get("resolucao_processada", f"{proc_w}x{proc_h}")
+    resultado["tamanho_original_kb"] = resultado.get("tamanho_original_kb", round(len(image_bytes) / 1024, 2))
+    resultado["tamanho_processado_kb"] = resultado.get("tamanho_processado_kb", round(len(resultado.get("imagem_processada_bytes", b"")) / 1024, 2))
+    resultado["tempo_execucao_segundos"] = resultado.get("tempo_execucao_segundos", resultado.get("tempo_processamento", 0.0))
+
+    # Registro no Banco de Dados
+    usuario = request.usuario
+    algoritmo_instancia, _ = Algoritmo.objects.get_or_create(
+        tipo=tipo_algoritmo_str,
+        defaults={
+            "parametros": json.dumps(algoritmo_params)
+        }
+    )
+
+    registro_imagem = Imagem.objects.create(
+        usuario=usuario,
+        algoritmo=algoritmo_instancia,
+        nomeArquivo=nome_arquivo,
+        formato=formato,
+        resolucao=resultado["resolucao_processada"],
+        tamanho=resultado["tamanho_processado_kb"],
+        dadosOriginal=image_bytes,
+        dadosProcessada=resultado["imagem_processada_bytes"]
+    )
+
+    # Retorno padrão da API
+    return JsonResponse({
+        "status": "sucesso",
+        "mensagem": msg_sucesso,
+        "dados": {
+            "imagem_id": registro_imagem.id,
+            "nome_arquivo": nome_arquivo,
+            "imagem_base64": resultado["imagem_processada_base64"],
+            "resolucao_original": resultado["resolucao_original"],
+            "resolucao_processada": resultado["resolucao_processada"],
+            "largura_original": orig_w,
+            "altura_original": orig_h,
+            "largura_processada": proc_w,
+            "altura_processada": proc_h,
+            "tempo_execucao_segundos": resultado["tempo_execucao_segundos"],
+            "tamanho_original_kb": resultado["tamanho_original_kb"],
+            "tamanho_processado_kb": resultado["tamanho_processado_kb"],
+            "modelo": "SAFHDR",
+            "modelo_hdr": "SAFHDR",
+            "dispositivo": resultado.get("dispositivo", "CPU")
+        }
+    }, status=200)

@@ -50,11 +50,12 @@ export const imageApi = {
   },
 
   /**
-   * Executa a inferência de Dehazing com Depth Anything V2 + UDPNet no backend.
+   * Executa a inferência de Dehazing (UDPNet ou ConvIR) no backend.
    * @param {File} imageFile - Arquivo de imagem enviado pelo usuário.
+   * @param {string} model - Arquitetura de rede ('UDPNet' ou 'ConvIR').
    * @returns {Promise<Object>} Resultado da inferência com imagem Base64 e metadados.
    */
-  async processDehazing(imageFile) {
+  async processDehazing(imageFile, model = 'UDPNet') {
     const token = localStorage.getItem('dsr_token')
     if (!token) {
       throw new Error('Usuário não autenticado. Por favor, realize login novamente.')
@@ -63,6 +64,8 @@ export const imageApi = {
     const formData = new FormData()
     formData.append('imagem', imageFile)
     formData.append('algoritmo', 'dehazing')
+    formData.append('modelo', model)
+    formData.append('model', model)
 
     try {
       const response = await fetch(`${API_BASE_URL}/processar/dehazing/`, {

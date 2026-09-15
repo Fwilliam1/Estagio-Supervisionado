@@ -24,6 +24,7 @@ urlpatterns = [
     path('processar/convir/', processamento_controller.convir_view, name='api_convir'),
     path('processar/depth/', processamento_controller.depth_view, name='api_depth'),
     path('processar/super-resolution/', processamento_controller.super_resolution_view, name='api_super_resolution'),
+    path('processar/hdr/', processamento_controller.hdr_view, name='api_hdr'),
     path('processar/', processamento_controller.processamento_router_view, name='api_processar'),
     path('imagens/<int:imagem_id>/download/', processamento_controller.download_imagem_view, name='api_download_imagem'),
 

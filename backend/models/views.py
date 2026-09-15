@@ -323,6 +323,7 @@ def salvar_imagem_api(request):
             'dmnet' in str(process_type).lower() or
             'esc' in str(process_type).lower()
         )
+        is_hdr = 'hdr' in str(process_type).lower()
         modelo_req = data.get('model') or data.get('modelo') or ('ESC' if 'esc' in str(process_type).lower() else 'DMNet')
         modelo_display = 'ESC' if 'esc' in str(modelo_req).lower() else 'DMNet'
 
@@ -330,6 +331,9 @@ def salvar_imagem_api(request):
             tipo_algo = f"{modelo_display}_SuperResolution_X{scale}"
             pesos_nome = f"DMNet_X{scale}.pth" if modelo_display == 'DMNet' else f"ESC_DIV2K_X{scale}.pth"
             params_algo = json.dumps({"modelo": modelo_display, "escala": scale, "pesos": pesos_nome})
+        elif is_hdr:
+            tipo_algo = "SAFHDR_Logarithmic_ToneMapping"
+            params_algo = json.dumps({"modelo": "SAFHDR", "pesos": "model_tm_406392_G.pth", "mu_law": 5000.0})
         else:
             tipo_algo = "dehazing"
             params_algo = json.dumps({"modelo": "UDPNet_FSNet"})
