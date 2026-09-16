@@ -52,6 +52,20 @@ export default function Home({
     if (raw.includes('convir')) return 'ConvIR'
     return 'UDPNet'
   })
+  const [selectedToneMapping, setSelectedToneMapping] = useState(() => {
+    if (pendingHistoryItem?.toneMapping) return pendingHistoryItem.toneMapping
+    const raw = (
+      String(pendingHistoryItem?.process || '') +
+      ' ' +
+      String(pendingHistoryItem?.processLabel || '') +
+      ' ' +
+      String(pendingHistoryItem?.model || '')
+    ).toLowerCase()
+    if (raw.includes('drago')) return 'Drago'
+    if (raw.includes('mantiuk')) return 'Mantiuk'
+    if (raw.includes('log') || raw.includes('mu-law')) return 'Logarítmico'
+    return 'Reinhard'
+  })
   const [scaleFactor, setScaleFactor] = useState(() => {
     if (pendingHistoryItem?.scale) return Number(pendingHistoryItem.scale)
     const raw = String(pendingHistoryItem?.process || '') + ' ' + String(pendingHistoryItem?.processLabel || '')
@@ -153,8 +167,21 @@ export default function Home({
           imagem_base64: inputSrc,
           nome_arquivo: currentMeta?.name || 'imagem_upload.png',
           algoritmo: algorithm,
-          modelo: algorithm === 'dehazing' ? selectedDehazingModel : selectedModel,
-          model: algorithm === 'dehazing' ? selectedDehazingModel : selectedModel,
+          modelo:
+            algorithm === 'dehazing'
+              ? selectedDehazingModel
+              : algorithm === 'hdr'
+              ? selectedToneMapping
+              : selectedModel,
+          model:
+            algorithm === 'dehazing'
+              ? selectedDehazingModel
+              : algorithm === 'hdr'
+              ? selectedToneMapping
+              : selectedModel,
+          tone_mapping: selectedToneMapping.toLowerCase(),
+          toneMapping: selectedToneMapping,
+          tonemap: selectedToneMapping.toLowerCase(),
           encoder: 'vits',
           grayscale: true,
           scale: scaleFactor,
@@ -293,9 +320,21 @@ export default function Home({
           processedImage: resultDataUrl,
           process: algorithm,
           scale: algorithm === 'super-resolution' ? scaleFactor : undefined,
-          model: algorithm === 'super-resolution' ? selectedModel : (algorithm === 'dehazing' ? selectedDehazingModel : undefined),
+          model:
+            algorithm === 'super-resolution'
+              ? selectedModel
+              : algorithm === 'dehazing'
+              ? selectedDehazingModel
+              : selectedToneMapping,
           dehazingModel: algorithm === 'dehazing' ? selectedDehazingModel : undefined,
-          fileName: currentMeta?.name || 'imagem_processada.png',
+          toneMapping: algorithm === 'hdr' ? selectedToneMapping : undefined,
+          fileName:
+            currentMeta?.name ||
+            (algorithm === 'super-resolution'
+              ? `imagem_super_res_${selectedModel}.png`
+              : algorithm === 'hdr'
+              ? `imagem_hdr_${selectedToneMapping.toLowerCase()}.png`
+              : `imagem_dehazed_${selectedDehazingModel}.png`),
           fileSize: fileSizeFormatted,
           fileSizeInBytes:
             typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
@@ -343,6 +382,17 @@ export default function Home({
         dehazingModel = pendingHistoryItem.model
       }
 
+      let toneMapping = 'Reinhard'
+      if (pendingHistoryItem.toneMapping) {
+        toneMapping = pendingHistoryItem.toneMapping
+      } else if (rawProcess.includes('drago') || rawLabel.includes('drago')) {
+        toneMapping = 'Drago'
+      } else if (rawProcess.includes('mantiuk') || rawLabel.includes('mantiuk')) {
+        toneMapping = 'Mantiuk'
+      } else if (rawProcess.includes('log') || rawLabel.includes('log') || rawProcess.includes('mu-law')) {
+        toneMapping = 'Logarítmico'
+      }
+
       let scale = 2
       if (pendingHistoryItem.scale) {
         scale = Number(pendingHistoryItem.scale)
@@ -365,6 +415,7 @@ export default function Home({
       setSelectedAlgorithm(algo)
       setSelectedModel(model)
       setSelectedDehazingModel(dehazingModel)
+      setSelectedToneMapping(toneMapping)
       setScaleFactor(scale)
       setSelectedFile(meta)
       setOriginalImageUrl(src)
@@ -376,7 +427,7 @@ export default function Home({
           isSR
             ? `Super-Resolução (${model} ${scale}x)`
             : isHDR
-            ? 'HDR'
+            ? `HDR (${toneMapping})`
             : `Image Dehazing (${dehazingModel})`
         }" pré-selecionado!`
       )
@@ -459,7 +510,7 @@ export default function Home({
       if (selectedAlgorithm === 'super-resolution') {
         resultado = await imageApi.processSuperResolution(fileToSend, scaleFactor, selectedModel)
       } else if (selectedAlgorithm === 'hdr') {
-        resultado = await imageApi.processHdr(fileToSend)
+        resultado = await imageApi.processHdr(fileToSend, selectedToneMapping)
       } else {
         resultado = await imageApi.processDehazing(fileToSend, selectedDehazingModel)
       }
@@ -490,14 +541,20 @@ export default function Home({
           processedImage: processedUrl,
           process: selectedAlgorithm,
           scale: selectedAlgorithm === 'super-resolution' ? scaleFactor : undefined,
-          model: selectedAlgorithm === 'super-resolution' ? selectedModel : selectedDehazingModel,
+          model:
+            selectedAlgorithm === 'super-resolution'
+              ? selectedModel
+              : selectedAlgorithm === 'dehazing'
+              ? selectedDehazingModel
+              : selectedToneMapping,
           dehazingModel: selectedAlgorithm === 'dehazing' ? selectedDehazingModel : undefined,
+          toneMapping: selectedAlgorithm === 'hdr' ? selectedToneMapping : undefined,
           fileName:
             currentMeta?.name ||
             (selectedAlgorithm === 'super-resolution'
               ? `imagem_super_res_${selectedModel}.png`
               : selectedAlgorithm === 'hdr'
-              ? 'imagem_hdr.png'
+              ? `imagem_hdr_${selectedToneMapping.toLowerCase()}.png`
               : `imagem_dehazed_${selectedDehazingModel}.png`),
           fileSize: fileSizeFormatted,
           fileSizeInBytes: typeof currentMeta?.size === 'number' ? currentMeta.size : 0,
@@ -523,7 +580,7 @@ export default function Home({
       selectedAlgorithm === 'super-resolution'
         ? `_x${scaleFactor}_${selectedModel}`
         : selectedAlgorithm === 'hdr'
-        ? '_hdr'
+        ? `_hdr_${selectedToneMapping.toLowerCase()}`
         : `_dehazed_${selectedDehazingModel}`
     link.download = `${baseName}${scaleSuffix}.png`
     document.body.appendChild(link)
@@ -915,6 +972,72 @@ export default function Home({
               </div>
             </div>
           )}
+
+          {/* Opções de HDR: Escolha de Tone Mapping (Exibido quando HDR estiver ativo) */}
+          {selectedAlgorithm === 'hdr' && (
+            <div className="sr-options-container">
+              <div className="scale-selector-wrapper">
+                <div className="scale-selector-title">
+                  <span className="label">Operador de Tone Mapping</span>
+                  <span className="desc">Selecione o método de mapeamento de tons:</span>
+                </div>
+                <div className="scale-options-pills tone-mapping-pills">
+                  <button
+                    type="button"
+                    className={`scale-pill-btn model-pill-btn ${selectedToneMapping === 'Reinhard' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedToneMapping('Reinhard')
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>Reinhard</span>
+                    <small className="pill-subtext">Adaptação Fotográfica (OpenCV)</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`scale-pill-btn model-pill-btn ${selectedToneMapping === 'Drago' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedToneMapping('Drago')
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>Drago</span>
+                    <small className="pill-subtext">Logarítmico Adaptativo (OpenCV)</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`scale-pill-btn model-pill-btn ${selectedToneMapping === 'Mantiuk' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedToneMapping('Mantiuk')
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>Mantiuk</span>
+                    <small className="pill-subtext">Mapeamento por Contraste (OpenCV)</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`scale-pill-btn model-pill-btn ${selectedToneMapping === 'Logarítmico' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedToneMapping('Logarítmico')
+                      setProcessedImageUrl(null)
+                      setProcessMeta(null)
+                    }}
+                    disabled={isProcessing}
+                  >
+                    <span>Logarítmico</span>
+                    <small className="pill-subtext">Compressão μ-Law (Tensor)</small>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* 2. Envie a Imagem */}
@@ -1039,7 +1162,7 @@ export default function Home({
                       {selectedAlgorithm === 'super-resolution'
                         ? `Processando Super-Resolução (${selectedModel} ${scaleFactor}x) na GPU...`
                         : selectedAlgorithm === 'hdr'
-                        ? 'Processando HDR...'
+                        ? `Processando HDR (${selectedToneMapping})...`
                         : `Processando Dehazing (${selectedDehazingModel})...`}
                     </p>
                   </div>
@@ -1080,7 +1203,7 @@ export default function Home({
                 {selectedAlgorithm === 'dehazing'
                   ? `Image Dehazing (${selectedDehazingModel})`
                   : selectedAlgorithm === 'hdr'
-                  ? 'HDR'
+                  ? `HDR (${selectedToneMapping})`
                   : `Super-Resolution (${selectedModel} ${scaleFactor}x)`}
               </strong>
             </div>

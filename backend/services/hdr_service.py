@@ -159,36 +159,53 @@ class HDRService:
             cls.model.eval()
 
     @classmethod
-    def aplicar_tone_mapping_reinhard_cv2(
-        cls, 
-        hdr_tensor: torch.Tensor, 
-        gamma: float = 1.2,
-        intensity: float = 0.0, 
-        light_adapt: float = 0.0,
-        color_adapt: float = 1.0
-    ) -> torch.Tensor:
-        """
-        Aplica o Tone Mapping de Reinhard usando a biblioteca OpenCV.
-        """
-        # 1. Remove a dimensão do batch (se for (1, C, H, W) vira (C, H, W))
+    def _pre_processar_hdr(cls, hdr_tensor: torch.Tensor) -> np.ndarray:
+        """Remove batch, converte Tensor (C, H, W) RGB para NumPy (H, W, C) BGR e garante float32."""
         if hdr_tensor.dim() == 4:
             hdr_tensor = hdr_tensor.squeeze(0)
             
-        # 2. Converte de Tensor para NumPy e reordena de (C, H, W) para (H, W, C)
-        hdr_np = hdr_tensor.cpu().numpy()
+        hdr_np = hdr_tensor.detach().cpu().numpy()
         hdr_np = np.transpose(hdr_np, (1, 2, 0))
-        
-        # 3. Garante que é do tipo float32 (exigido pelo OpenCV) e corta negativos
         hdr_np = np.float32(np.clip(hdr_np, 0.0, None))
         
-        # 4. Converte de RGB (PyTorch/PIL) para BGR (padrão OpenCV)
-        hdr_bgr = cv2.cvtColor(hdr_np, cv2.COLOR_RGB2BGR)
-        
-        # 5. Instancia o Reinhard do OpenCV e processa a imagem
-        # gamma: Ajuste de gamma (padrão 1.0)
-        # intensity: Contraste/Intensidade global
-        # light_adapt: Adaptação à luz (0.0 a 1.0)
-        # color_adapt: Adaptação de cor (0.0 a 1.0)
+        return cv2.cvtColor(hdr_np, cv2.COLOR_RGB2BGR)
+
+    @classmethod
+    def _pos_processar_ldr(cls, ldr_bgr: np.ndarray) -> torch.Tensor:
+        """Converte BGR para RGB, reordena para (C, H, W) e retorna Tensor clampeado [0.0, 1.0]."""
+        ldr_rgb = cv2.cvtColor(ldr_bgr, cv2.COLOR_BGR2RGB)
+        ldr_tensor = torch.from_numpy(np.transpose(ldr_rgb, (2, 0, 1)))
+        return torch.clamp(ldr_tensor, 0.0, 1.0)
+
+    @classmethod
+    def aplicar_tone_mapping_drago_cv2(
+        cls, 
+        hdr_tensor: torch.Tensor, 
+        gamma: float = 2.2, 
+        saturation: float = 1.0, 
+        bias: float = 1.0
+    ) -> torch.Tensor:
+        """Aplica o Tone Mapping de Drago usando o OpenCV."""
+        hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
+        tonemap = cv2.createTonemapDrago(
+            gamma=gamma, 
+            saturation=saturation, 
+            bias=bias
+        )
+        ldr_bgr = tonemap.process(hdr_bgr)
+        return cls._pos_processar_ldr(ldr_bgr)
+
+    @classmethod
+    def aplicar_tone_mapping_reinhard_cv2(
+        cls, 
+        hdr_tensor: torch.Tensor, 
+        gamma: float = 1.0, 
+        intensity: float = 0.0, 
+        light_adapt: float = 0.0, 
+        color_adapt: float = 1.0
+    ) -> torch.Tensor:
+        """Aplica o Tone Mapping de Reinhard usando o OpenCV."""
+        hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
         tonemap = cv2.createTonemapReinhard(
             gamma=gamma, 
             intensity=intensity, 
@@ -196,35 +213,56 @@ class HDRService:
             color_adapt=color_adapt
         )
         ldr_bgr = tonemap.process(hdr_bgr)
-        
-        # 6. Converte de BGR de volta para RGB
-        ldr_rgb = cv2.cvtColor(ldr_bgr, cv2.COLOR_BGR2RGB)
-        
-        # 7. Converte de volta para Tensor no formato (C, H, W) para o pipeline
-        ldr_tensor = torch.from_numpy(np.transpose(ldr_rgb, (2, 0, 1)))
-        
-        # Garante limites seguros para a conversão final da PIL
-        return torch.clamp(ldr_tensor, 0.0, 1.0)
+        return cls._pos_processar_ldr(ldr_bgr)
 
     @classmethod
-    def aplicar_tone_mapping(cls, hdr_tensor: torch.Tensor, mu: float = 100.0) -> torch.Tensor:
-        """
-        Aplica o Tone Mapping Logarítmico (mu-law) isoladamente a um tensor.
-        """
+    def aplicar_tone_mapping_mantiuk_cv2(
+        cls, 
+        hdr_tensor: torch.Tensor, 
+        gamma: float = 2.2, 
+        scale: float = 0.7, 
+        saturation: float = 1.0
+    ) -> torch.Tensor:
+        """Aplica o Tone Mapping de Mantiuk usando o OpenCV."""
+        hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
+        tonemap = cv2.createTonemapMantiuk(
+            gamma=gamma, 
+            scale=scale, 
+            saturation=saturation
+        )
+        ldr_bgr = tonemap.process(hdr_bgr)
+        return cls._pos_processar_ldr(ldr_bgr)
+
+    @classmethod
+    def aplicar_tone_mapping_logaritmico(
+        cls, hdr_tensor: torch.Tensor, mu: float = 5000.0
+    ) -> torch.Tensor:
+        """Aplica o Tone Mapping Logarítmico (mu-law) isoladamente a um tensor em GPU/CPU."""
         # Garante que não existam valores negativos
         hdr_tensor = torch.clamp(hdr_tensor, min=0.0)
 
         # Aplica a fórmula mu-law
-        tonemapped_tensor = torch.log(1.0 + mu * hdr_tensor) / math.log(1.0 + mu)
+        tonemapped_tensor = torch.log(1.0 + mu * hdr_tensor) / math.log(
+            1.0 + mu
+        )
 
         # Garante que os valores fiquem entre 0.0 e 1.0
         return torch.clamp(tonemapped_tensor, 0.0, 1.0)
 
+    # Alias de compatibilidade
+    aplicar_tone_mapping = aplicar_tone_mapping_logaritmico
+
     @classmethod
-    def processar_imagem(cls, image_bytes: bytes, clip_limit: float = 2.5, tile_grid_size: int = 8) -> Dict[str, Any]:
+    def processar_imagem(
+        cls, 
+        image_bytes: bytes, 
+        clip_limit: float = 2.5, 
+        tile_grid_size: int = 8,
+        tone_mapping: str = 'reinhard'
+    ) -> Dict[str, Any]:
         """
-        Processa os bytes da imagem aplicando algoritmo HDR, passando pelo modelo
-        e aplicando o tone mapping logarítmico através de métodos da classe.
+        Processa os bytes da imagem aplicando algoritmo HDR (SAFHDR), passando pelo modelo
+        e aplicando um dos 4 operadores de tone mapping (Reinhard, Drago, Mantiuk, Logarítmico).
         Garante padding para que qualquer dimensão de imagem seja processada sem incompatibilidade de tensores.
         """
         if not image_bytes or len(image_bytes) == 0:
@@ -267,12 +305,25 @@ class HDRService:
         # Corta o padding excedente para retornar o tamanho original exato
         output = output_padded[:, :, :orig_h, :orig_w]
 
-        # 5. Aplica o Tone Mapping
-        # tonemapped_tensor = cls.aplicar_tone_mapping(output, mu=1.0)
-        tonemapped_tensor = cls.aplicar_tone_mapping_reinhard_cv2(output)
+        # 5. Aplica o Tone Mapping selecionado entre os 4 disponíveis
+        tm_key = str(tone_mapping or 'reinhard').strip().lower()
+        if 'drago' in tm_key:
+            tonemapped_tensor = cls.aplicar_tone_mapping_drago_cv2(output)
+            tm_nome = 'Drago'
+        elif 'mantiuk' in tm_key:
+            tonemapped_tensor = cls.aplicar_tone_mapping_mantiuk_cv2(output)
+            tm_nome = 'Mantiuk'
+        elif 'log' in tm_key or 'mu' in tm_key:
+            tonemapped_tensor = cls.aplicar_tone_mapping_logaritmico(output)
+            tm_nome = 'Logarítmico'
+        else:
+            tonemapped_tensor = cls.aplicar_tone_mapping_reinhard_cv2(output)
+            tm_nome = 'Reinhard'
 
-        # 6. Converte para PIL (garante CPU)
-        tonemapped_tensor = tonemapped_tensor.squeeze(0).cpu()
+        # 6. Converte para PIL (garante CPU e formato C, H, W)
+        if tonemapped_tensor.dim() == 4:
+            tonemapped_tensor = tonemapped_tensor.squeeze(0)
+        tonemapped_tensor = tonemapped_tensor.detach().cpu()
         imagem_final_pil = transforms.ToPILImage()(tonemapped_tensor)
         proc_w, proc_h = imagem_final_pil.size
 
@@ -300,7 +351,8 @@ class HDRService:
             "largura_processada": proc_w,
             "altura_processada": proc_h,
             "resolucao_processada": f"{proc_w}x{proc_h}",
-            "modelo": "SAFHDR",
+            "modelo": f"SAFHDR ({tm_nome})",
+            "tone_mapping": tm_nome,
             "tempo_processamento": round(elapsed_time, 3),
             "tempo_execucao_segundos": round(elapsed_time, 3),
             "tamanho_original_kb": tamanho_original_kb,

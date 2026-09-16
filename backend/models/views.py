@@ -217,12 +217,28 @@ def historico_api(request):
             is_hdr = 'hdr' in algo_tipo_raw.lower()
             dehazing_model = 'ConvIR' if 'convir' in algo_tipo_raw.lower() else 'UDPNet'
 
+            tone_mapping_val = 'Reinhard'
+            if is_hdr:
+                if 'drago' in algo_tipo_raw.lower():
+                    tone_mapping_val = 'Drago'
+                elif 'mantiuk' in algo_tipo_raw.lower():
+                    tone_mapping_val = 'Mantiuk'
+                elif 'log' in algo_tipo_raw.lower():
+                    tone_mapping_val = 'Logarítmico'
+                elif algo_params_raw:
+                    try:
+                        p = json.loads(algo_params_raw)
+                        if 'tone_mapping' in p:
+                            tone_mapping_val = p['tone_mapping']
+                    except Exception:
+                        pass
+
             if is_sr:
                 algo_tipo = 'super-resolution'
                 algo_label = f"Super-Resolution ({modelo} {scale}x)"
             elif is_hdr:
                 algo_tipo = 'hdr'
-                algo_label = "HDR"
+                algo_label = f"HDR ({tone_mapping_val})"
             else:
                 algo_tipo = 'dehazing'
                 algo_label = f"Image Dehazing ({dehazing_model})"
@@ -241,8 +257,9 @@ def historico_api(request):
                 "processedImage": processed_url,
                 "process": algo_tipo,
                 "scale": scale if is_sr else None,
-                "model": modelo if is_sr else (dehazing_model if not is_hdr else None),
+                "model": modelo if is_sr else (dehazing_model if not is_hdr else tone_mapping_val),
                 "dehazingModel": dehazing_model if not is_sr and not is_hdr else None,
+                "toneMapping": tone_mapping_val if is_hdr else None,
                 "processLabel": algo_label,
                 "fileName": img.nomeArquivo,
                 "fileSize": file_size_formatted,
@@ -332,8 +349,9 @@ def salvar_imagem_api(request):
             pesos_nome = f"DMNet_X{scale}.pth" if modelo_display == 'DMNet' else f"ESC_DIV2K_X{scale}.pth"
             params_algo = json.dumps({"modelo": modelo_display, "escala": scale, "pesos": pesos_nome})
         elif is_hdr:
-            tipo_algo = "SAFHDR_Logarithmic_ToneMapping"
-            params_algo = json.dumps({"modelo": "SAFHDR", "pesos": "model_tm_406392_G.pth", "mu_law": 5000.0})
+            tone_mapping_req = data.get('toneMapping') or data.get('tone_mapping') or data.get('tonemap') or 'Reinhard'
+            tipo_algo = f"SAFHDR_{tone_mapping_req}_ToneMapping"
+            params_algo = json.dumps({"modelo": "SAFHDR", "pesos": "model_tm_406392_G.pth", "tone_mapping": tone_mapping_req, "mu_law": 5000.0})
         else:
             tipo_algo = "dehazing"
             params_algo = json.dumps({"modelo": "UDPNet_FSNet"})

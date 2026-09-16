@@ -382,6 +382,7 @@
   justify-content: space-between;
   gap: 16px;
   animation: fadeIn 0.25s ease;
+  flex-wrap: wrap;
 }
 
 .scale-selector-title {
@@ -404,6 +405,12 @@
 .scale-options-pills {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tone-mapping-pills .model-pill-btn {
+  flex: 1 1 auto;
+  min-width: 140px;
 }
 
 .scale-pill-btn {

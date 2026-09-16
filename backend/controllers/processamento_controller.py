@@ -52,6 +52,14 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
         else:
             modelo = modelo_param
 
+        tone_mapping = (
+            request.POST.get('tone_mapping') or
+            request.POST.get('toneMapping') or
+            request.POST.get('tonemap') or
+            request.POST.get('tipo_tone_mapping') or
+            'reinhard'
+        )
+
         opcoes = {
             'modelo': modelo,
             'version': request.POST.get('version') or request.POST.get('versao') or 'small',
@@ -59,6 +67,9 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
             'grayscale': request.POST.get('grayscale', 'true').lower() in ('true', '1', 'yes'),
             'colormap': request.POST.get('colormap', 'Spectral_r'),
             'input_size': int(request.POST.get('input_size', 518)),
+            'clip_limit': float(request.POST.get('clip_limit', 2.5)),
+            'tile_grid_size': int(request.POST.get('tile_grid_size', 8)),
+            'tone_mapping': tone_mapping,
         }
 
     # 2. Se enviado via JSON Body (Base64)
@@ -96,6 +107,14 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
                 else:
                     modelo = modelo_param
 
+                tone_mapping = (
+                    body.get('tone_mapping') or
+                    body.get('toneMapping') or
+                    body.get('tonemap') or
+                    body.get('tipo_tone_mapping') or
+                    'reinhard'
+                )
+
                 opcoes = {
                     'modelo': modelo,
                     'version': body.get('version') or body.get('versao') or 'small',
@@ -103,6 +122,9 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
                     'grayscale': str(body.get('grayscale', 'true')).lower() in ('true', '1', 'yes'),
                     'colormap': body.get('colormap', 'Spectral_r'),
                     'input_size': int(body.get('input_size', 518)),
+                    'clip_limit': float(body.get('clip_limit', 2.5)),
+                    'tile_grid_size': int(body.get('tile_grid_size', 8)),
+                    'tone_mapping': tone_mapping,
                 }
         except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
             raise ValidacaoError(f"Erro ao processar dados JSON da requisição: {str(e)}")
@@ -514,24 +536,34 @@ def _executar_hdr(request: HttpRequest, image_bytes: bytes, nome_arquivo: str, o
     # Extrai parâmetros opcionais, caso enviados no POST
     clip_limit = float(opcoes.get('clip_limit', 2.5))
     tile_grid_size = int(opcoes.get('tile_grid_size', 8))
+    tone_mapping = (
+        opcoes.get('tone_mapping') or
+        opcoes.get('toneMapping') or
+        opcoes.get('tonemap') or
+        'reinhard'
+    )
 
     # Chama o serviço
     resultado = HDRService.processar_imagem(
         image_bytes=image_bytes,
         clip_limit=clip_limit,
-        tile_grid_size=tile_grid_size
+        tile_grid_size=tile_grid_size,
+        tone_mapping=tone_mapping
     )
 
+    tm_aplicado = resultado.get("tone_mapping", str(tone_mapping).capitalize())
+
     # Configuração dos metadados para salvar no banco
-    tipo_algoritmo_str = "SAFHDR_Logarithmic_ToneMapping"
+    tipo_algoritmo_str = f"SAFHDR_{tm_aplicado}_ToneMapping"
     algoritmo_params = {
         "modelo": "SAFHDR",
         "pesos": "model_tm_406392_G.pth",
+        "tone_mapping": tm_aplicado,
         "mu_law": 5000.0,
         "clip_limit": clip_limit,
         "tile_grid_size": tile_grid_size
     }
-    msg_sucesso = "Processamento HDR aplicado com sucesso via SAFHDR!"
+    msg_sucesso = f"Processamento HDR ({tm_aplicado}) aplicado com sucesso via SAFHDR!"
 
     # Tratamento do formato da imagem
     formato = "PNG"
@@ -607,9 +639,9 @@ def _executar_hdr(request: HttpRequest, image_bytes: bytes, nome_arquivo: str, o
             "altura_processada": proc_h,
             "tempo_execucao_segundos": resultado["tempo_execucao_segundos"],
             "tamanho_original_kb": resultado["tamanho_original_kb"],
-            "tamanho_processado_kb": resultado["tamanho_processado_kb"],
-            "modelo": "SAFHDR",
+            "modelo": f"SAFHDR ({tm_aplicado})",
             "modelo_hdr": "SAFHDR",
+            "tone_mapping": tm_aplicado,
             "dispositivo": resultado.get("dispositivo", "CPU")
         }
     }, status=200)

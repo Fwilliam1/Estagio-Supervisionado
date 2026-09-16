@@ -196,6 +196,12 @@ export async function saveHistoryItem(userEmail, item) {
   const rawDesc = (String(item.process || '') + ' ' + String(item.processLabel || '')).toLowerCase()
   const model = item.model || (rawDesc.includes('esc') ? 'ESC' : 'DMNet')
   const dehazingModel = item.dehazingModel || (rawDesc.includes('convir') ? 'ConvIR' : (item.model === 'ConvIR' ? 'ConvIR' : 'UDPNet'))
+  const toneMapping = item.toneMapping || (
+    rawDesc.includes('drago') ? 'Drago' :
+    rawDesc.includes('mantiuk') ? 'Mantiuk' :
+    (rawDesc.includes('log') || rawDesc.includes('mu-law')) ? 'Logarítmico' :
+    'Reinhard'
+  )
 
   const finalId = item.id || (item.db_id ? `db_${item.db_id}` : `hist_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`)
 
@@ -203,7 +209,7 @@ export async function saveHistoryItem(userEmail, item) {
   const resolvedProcessLabel = isSR
     ? `Super-Resolution (${model} ${scale}x)`
     : isHdr
-    ? 'HDR'
+    ? `HDR (${toneMapping})`
     : `Image Dehazing (${dehazingModel})`
 
   const newItem = {
@@ -217,8 +223,9 @@ export async function saveHistoryItem(userEmail, item) {
     processedImage: item.processedImage || null, // Base64 dataURL da imagem processada
     process: resolvedProcess,
     scale: isSR ? scale : undefined,
-    model: isSR ? model : (isDehazing ? dehazingModel : undefined),
+    model: isSR ? model : (isDehazing ? dehazingModel : toneMapping),
     dehazingModel: isDehazing ? dehazingModel : undefined,
+    toneMapping: isHdr ? toneMapping : undefined,
     processLabel: resolvedProcessLabel,
     fileName: item.fileName || 'imagem_upload.png',
     fileSize: item.fileSize || '1.0 MB',
@@ -255,6 +262,7 @@ export async function saveHistoryItem(userEmail, item) {
         process: newItem.process,
         scale: newItem.scale,
         model: newItem.model,
+        toneMapping: newItem.toneMapping,
         fileName: item.fileName,
         fileSize: item.fileSize,
         dimensions: item.dimensions,
