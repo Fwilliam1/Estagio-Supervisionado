@@ -20,10 +20,6 @@ backend_dir = str(Path(__file__).resolve().parent.parent)
 if backend_dir not in sys.path:
     sys.path.append(backend_dir)
 
-from archs.safhdr.SAFHDR import HDRUNet as SAFHDR
-from archs.pshdr.PSHDR import HDRUNet as PSHDR
-
-
 class HdrService_VersãoFELIPEEEmanuel:
     """
     Serviço para aprimoramento de alcance dinâmico (HDR / Tone Mapping).
@@ -41,7 +37,6 @@ class HdrService_VersãoFELIPEEEmanuel:
 
         start_time = time.perf_counter()
 
-        # 1. Carrega a imagem via PIL e converte para array NumPy RGB
         try:
             pil_image = Image.open(io.BytesIO(image_bytes))
             if pil_image.mode != 'RGB':
@@ -52,23 +47,17 @@ class HdrService_VersãoFELIPEEEmanuel:
         orig_w, orig_h = pil_image.size
         img_np = np.array(pil_image)
 
-        # 2. Conversão para espaço de cor LAB para desacoplar luminância e crominância
-        # BGR para OpenCV
         bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
         lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
         l_channel, a_channel, b_channel = cv2.split(lab)
 
-        # 3. Aplica CLAHE no canal L (Luminância) para equalizar contraste adaptativamente
         clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_grid_size, tile_grid_size))
         l_enhanced = clahe.apply(l_channel)
 
-        # 4. Fusão e suavização de sombras com curva de gama suave
         l_float = l_enhanced.astype(np.float32) / 255.0
-        # Curva de tom suave para elevar sombras sem estourar altas luzes
         l_gamma = np.power(l_float, 0.9)
         l_final = np.clip(l_gamma * 255.0, 0, 255).astype(np.uint8)
 
-        # 5. Realce sutil de vibração de cores nos canais A e B
         a_float = a_channel.astype(np.float32) - 128.0
         b_float = b_channel.astype(np.float32) - 128.0
         a_boost = np.clip(a_float * 1.08 + 128.0, 0, 255).astype(np.uint8)
@@ -77,7 +66,6 @@ class HdrService_VersãoFELIPEEEmanuel:
         merged_lab = cv2.merge((l_final, a_boost, b_boost))
         bgr_enhanced = cv2.cvtColor(merged_lab, cv2.COLOR_LAB2BGR)
 
-        # 6. Realce de detalhes finos (Unsharp Masking suave)
         gaussian = cv2.GaussianBlur(bgr_enhanced, (0, 0), 2.0)
         unsharp = cv2.addWeighted(bgr_enhanced, 1.25, gaussian, -0.25, 0)
         unsharp = np.clip(unsharp, 0, 255).astype(np.uint8)
@@ -88,7 +76,6 @@ class HdrService_VersãoFELIPEEEmanuel:
 
         elapsed_time = time.perf_counter() - start_time
 
-        # 7. Serialização para PNG e Base64
         buffer = io.BytesIO()
         result_pil.save(buffer, format='PNG', optimize=True)
         processed_bytes = buffer.getvalue()
@@ -132,33 +119,39 @@ class HDRService:
     def normalizar_nome_modelo(cls, model_name: Optional[str]) -> str:
         """Normaliza o nome do modelo para 'PSHDR' ou 'SAFHDR'."""
         nome = str(model_name or 'PSHDR').strip().upper()
+        # Verificação exata para evitar carregar a rede errada
+        if nome == 'PSHDR':
+            return 'PSHDR'
         if 'SAF' in nome:
             return 'SAFHDR'
         return 'PSHDR'
 
     @classmethod
     def _carregar_modelo(cls, model_name: str = 'PSHDR') -> nn.Module:
-        """Carrega o modelo e os pesos apenas se ainda não estiverem na memória (Lazy Loading)."""
+        """Carrega o modelo e os pesos apenas se ainda não estiverem na memória (Lazy Loading e Lazy Import)."""
         modelo_chave = cls.normalizar_nome_modelo(model_name)
         if modelo_chave not in cls._models or cls._models[modelo_chave] is None:
             device = cls.get_device()
             base_dir = Path(__file__).resolve().parent.parent
 
             if modelo_chave == 'PSHDR':
-                instancia = PSHDR().to(device)
+                # Import isolado para PSHDR
+                from archs.pshdr.PSHDR import HDRUNet as PSHDR_Arch
+                instancia = PSHDR_Arch().to(device)
                 caminho_peso = base_dir / "pretrained_models" / "PSHDR_G.pth"
                 if not caminho_peso.exists():
-                    fallback = Path(r"C:\Users\Emanuel Ramos\Desktop\PSHDR\PSHDR_G.pth")
+                    fallback = Path(r"C:\Users\felip\Documents\Estagio-Supervisionado\backend\pretrained_models\PSHDR_G.pth")
                     if fallback.exists():
                         caminho_peso = fallback
                     else:
                         raise ServiceException(
-                            f"Pesos do modelo PSHDR não encontrados em: {caminho_peso}. "
-                            "Certifique-se de que o arquivo 'PSHDR_G.pth' está na pasta 'backend/pretrained_models/'.",
+                            f"Pesos do modelo PSHDR não encontrados em: {caminho_peso}.",
                             status_code=500
                         )
             else:
-                instancia = SAFHDR().to(device)
+                # Import isolado para SAFHDR
+                from archs.safhdr.SAFHDR import HDRUNet as SAFHDR_Arch
+                instancia = SAFHDR_Arch().to(device)
                 caminho_peso = base_dir / "pretrained_models" / "model_tm_406392_G.pth"
                 if not caminho_peso.exists():
                     fallback = Path(r"C:\Users\felip\Documents\Estagio-Supervisionado\backend\pretrained_models\model_tm_406392_G.pth")
@@ -166,8 +159,7 @@ class HDRService:
                         caminho_peso = fallback
                     else:
                         raise ServiceException(
-                            f"Pesos do modelo SAFHDR não encontrados em: {caminho_peso}. "
-                            "Certifique-se de que o arquivo 'model_tm_406392_G.pth' está na pasta 'backend/pretrained_models/'.",
+                            f"Pesos do modelo SAFHDR não encontrados em: {caminho_peso}.",
                             status_code=500
                         )
 
@@ -185,15 +177,14 @@ class HDRService:
 
         return cls._models[modelo_chave]
 
-    # Propriedade de retrocompatibilidade
     @classmethod
-    @property
-    def model(cls):
-        return cls._models.get('SAFHDR') or cls._models.get('PSHDR')
+    def obter_modelo_ativo(cls, model_name: str = 'PSHDR'):
+        """Retorna o modelo instanciado pelo nome, sem priorizar um específico."""
+        modelo_chave = cls.normalizar_nome_modelo(model_name)
+        return cls._models.get(modelo_chave)
 
     @classmethod
     def _pre_processar_hdr(cls, hdr_tensor: torch.Tensor) -> np.ndarray:
-        """Remove batch, converte Tensor (C, H, W) RGB para NumPy (H, W, C) BGR e garante float32."""
         if hdr_tensor.dim() == 4:
             hdr_tensor = hdr_tensor.squeeze(0)
 
@@ -206,7 +197,6 @@ class HDRService:
 
     @classmethod
     def _pos_processar_ldr(cls, ldr_bgr: np.ndarray) -> torch.Tensor:
-        """Converte BGR para RGB, reordena para (C, H, W) e retorna Tensor clampeado [0.0, 1.0]."""
         ldr_bgr = np.nan_to_num(ldr_bgr, nan=0.0, posinf=1.0, neginf=0.0)
         ldr_bgr = np.clip(ldr_bgr, 0.0, 1.0)
         ldr_rgb = cv2.cvtColor(ldr_bgr, cv2.COLOR_BGR2RGB)
@@ -221,7 +211,6 @@ class HDRService:
         saturation: float = 1.0, 
         bias: float = 1.0
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping de Drago usando o OpenCV."""
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
         tonemap = cv2.createTonemapDrago(
             gamma=gamma, 
@@ -240,7 +229,6 @@ class HDRService:
         light_adapt: float = 0.0, 
         color_adapt: float = 1.0
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping de Reinhard usando o OpenCV."""
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
         tonemap = cv2.createTonemapReinhard(
             gamma=gamma, 
@@ -259,7 +247,6 @@ class HDRService:
         scale: float = 0.7, 
         saturation: float = 1.0
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping de Mantiuk usando o OpenCV."""
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
         tonemap = cv2.createTonemapMantiuk(
             gamma=gamma, 
@@ -273,19 +260,12 @@ class HDRService:
     def aplicar_tone_mapping_logaritmico(
         cls, hdr_tensor: torch.Tensor, mu: float = 5000.0
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping Logarítmico (mu-law) isoladamente a um tensor em GPU/CPU."""
-        # Garante que não existam valores negativos
         hdr_tensor = torch.clamp(hdr_tensor, min=0.0)
-
-        # Aplica a fórmula mu-law
         tonemapped_tensor = torch.log(1.0 + mu * hdr_tensor) / math.log(
             1.0 + mu
         )
-
-        # Garante que os valores fiquem entre 0.0 e 1.0
         return torch.clamp(tonemapped_tensor, 0.0, 1.0)
 
-    # Alias de compatibilidade
     aplicar_tone_mapping = aplicar_tone_mapping_logaritmico
 
     @classmethod
@@ -297,22 +277,15 @@ class HDRService:
         tone_mapping: str = 'reinhard',
         model_name: str = 'PSHDR'
     ) -> Dict[str, Any]:
-        """
-        Processa os bytes da imagem aplicando algoritmo HDR (PSHDR ou SAFHDR), passando pelo modelo
-        e aplicando um dos 4 operadores de tone mapping (Reinhard, Drago, Mantiuk, Logarítmico).
-        Garante padding para que qualquer dimensão de imagem seja processada sem incompatibilidade de tensores.
-        """
         if not image_bytes or len(image_bytes) == 0:
             raise ValidacaoError("Os dados da imagem estão vazios.")
 
         start_time = time.perf_counter()
 
-        # 1. Garante que o modelo desejado está carregado antes de processar
         modelo_norm = cls.normalizar_nome_modelo(model_name)
         modelo_instancia = cls._carregar_modelo(modelo_norm)
         device = cls.get_device()
 
-        # 2. Carrega a imagem e converte para tensor
         try:
             pil_image = Image.open(io.BytesIO(image_bytes))
             if pil_image.mode != 'RGB':
@@ -323,7 +296,6 @@ class HDRService:
         orig_w, orig_h = pil_image.size
         tensor_img = transforms.ToTensor()(pil_image).unsqueeze(0).to(device)
 
-        # 3. Padding para garantir que a resolução seja múltipla de 16
         factor = 16
         pad_h = (factor - orig_h % factor) % factor
         pad_w = (factor - orig_w % factor) % factor
@@ -334,14 +306,11 @@ class HDRService:
         else:
             padded_input = tensor_img
 
-        # 4. Passa pelo modelo inferindo sem gradiente
         with torch.no_grad():
             output_padded = modelo_instancia(padded_input)
 
-        # Corta o padding excedente para retornar o tamanho original exato
         output = output_padded[:, :, :orig_h, :orig_w]
 
-        # 5. Aplica o Tone Mapping selecionado entre os 4 disponíveis
         tm_key = str(tone_mapping or 'reinhard').strip().lower()
         if 'drago' in tm_key:
             tonemapped_tensor = cls.aplicar_tone_mapping_drago_cv2(output)
@@ -356,7 +325,6 @@ class HDRService:
             tonemapped_tensor = cls.aplicar_tone_mapping_reinhard_cv2(output)
             tm_nome = 'Reinhard'
 
-        # 6. Converte para PIL (garante CPU e formato C, H, W)
         if tonemapped_tensor.dim() == 4:
             tonemapped_tensor = tonemapped_tensor.squeeze(0)
         tonemapped_tensor = tonemapped_tensor.detach().cpu()
@@ -365,7 +333,6 @@ class HDRService:
 
         elapsed_time = time.perf_counter() - start_time
 
-        # 7. Serialização para bytes e base64 data-uri
         buffer = io.BytesIO()
         imagem_final_pil.save(buffer, format='PNG', optimize=True)
         processed_bytes = buffer.getvalue()
