@@ -148,7 +148,7 @@ class HDRService:
                 instancia = PSHDR().to(device)
                 caminho_peso = base_dir / "pretrained_models" / "PSHDR_G.pth"
                 if not caminho_peso.exists():
-                    fallback = Path(r"C:\Users\Emanuel Ramos\Desktop\PSHDR\PSHDR_G.pth")
+                    fallback = Path(r".\backend\pretrained_models\PSHDR_G.pth")
                     if fallback.exists():
                         caminho_peso = fallback
                     else:
@@ -161,7 +161,7 @@ class HDRService:
                 instancia = SAFHDR().to(device)
                 caminho_peso = base_dir / "pretrained_models" / "model_tm_406392_G.pth"
                 if not caminho_peso.exists():
-                    fallback = Path(r"C:\Users\felip\Documents\Estagio-Supervisionado\backend\pretrained_models\model_tm_406392_G.pth")
+                    fallback = Path(r".\backend\pretrained_models\model_tm_406392_G.pth")
                     if fallback.exists():
                         caminho_peso = fallback
                     else:
