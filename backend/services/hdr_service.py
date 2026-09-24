@@ -148,7 +148,7 @@ class HDRService:
                 instancia = PSHDR().to(device)
                 caminho_peso = base_dir / "pretrained_models" / "PSHDR_G.pth"
                 if not caminho_peso.exists():
-                    fallback = Path(r"C:\Users\Emanuel Ramos\Desktop\PSHDR\PSHDR_G.pth")
+                    fallback = Path(r".\pretrained_models\PSHDR_G.pth")
                     if fallback.exists():
                         caminho_peso = fallback
                     else:
@@ -161,7 +161,7 @@ class HDRService:
                 instancia = SAFHDR().to(device)
                 caminho_peso = base_dir / "pretrained_models" / "model_tm_406392_G.pth"
                 if not caminho_peso.exists():
-                    fallback = Path(r"C:\Users\felip\Documents\Estagio-Supervisionado\backend\pretrained_models\model_tm_406392_G.pth")
+                    fallback = Path(r".\pretrained_models\model_tm_406392_G.pth")
                     if fallback.exists():
                         caminho_peso = fallback
                     else:
@@ -219,16 +219,28 @@ class HDRService:
         hdr_tensor: torch.Tensor, 
         gamma: float = 2.2, 
         saturation: float = 1.0, 
-        bias: float = 1.0
+        bias: float = 0.85
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping de Drago usando o OpenCV."""
+        """Aplica o Tone Mapping de Drago usando o OpenCV com proteção contra NaNs e imagens nulas."""
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
+        if np.max(hdr_bgr) <= 1e-6:
+            return cls._pos_processar_ldr(np.zeros_like(hdr_bgr))
+
         tonemap = cv2.createTonemapDrago(
-            gamma=gamma, 
+            gamma=1.0, 
             saturation=saturation, 
             bias=bias
         )
-        ldr_bgr = tonemap.process(hdr_bgr)
+        try:
+            ldr_bgr = tonemap.process(hdr_bgr)
+        except cv2.error:
+            ldr_bgr = hdr_bgr / (1.0 + hdr_bgr)
+
+        ldr_bgr = np.nan_to_num(ldr_bgr, nan=0.0, posinf=1.0, neginf=0.0)
+        ldr_bgr = np.clip(ldr_bgr, 0.0, 1.0)
+        if gamma != 1.0:
+            ldr_bgr = np.power(ldr_bgr, 1.0 / gamma)
+
         return cls._pos_processar_ldr(ldr_bgr)
 
     @classmethod
@@ -242,13 +254,18 @@ class HDRService:
     ) -> torch.Tensor:
         """Aplica o Tone Mapping de Reinhard usando o OpenCV."""
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
+        if np.max(hdr_bgr) <= 1e-6:
+            return cls._pos_processar_ldr(np.zeros_like(hdr_bgr))
         tonemap = cv2.createTonemapReinhard(
             gamma=gamma, 
             intensity=intensity, 
             light_adapt=light_adapt, 
             color_adapt=color_adapt
         )
-        ldr_bgr = tonemap.process(hdr_bgr)
+        try:
+            ldr_bgr = tonemap.process(hdr_bgr)
+        except cv2.error:
+            ldr_bgr = hdr_bgr / (1.0 + hdr_bgr)
         return cls._pos_processar_ldr(ldr_bgr)
 
     @classmethod
@@ -259,26 +276,56 @@ class HDRService:
         scale: float = 0.7, 
         saturation: float = 1.0
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping de Mantiuk usando o OpenCV."""
+        """Aplica o Tone Mapping de Mantiuk usando o OpenCV com proteção contra NaNs e imagens homogêneas."""
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
+        max_val = np.max(hdr_bgr)
+        min_val = np.min(hdr_bgr)
+
+        if max_val <= 1e-6:
+            return cls._pos_processar_ldr(np.zeros_like(hdr_bgr))
+
+        # Se a imagem for homogênea/baixo contraste, o solver Poisson PDE de Mantiuk diverge (fabs(dprod) > 0)
+        if (max_val - min_val) < 1e-5:
+            ldr_bgr = hdr_bgr / (1.0 + hdr_bgr)
+            ldr_bgr = np.clip(ldr_bgr, 0.0, 1.0)
+            if gamma != 1.0:
+                ldr_bgr = np.power(ldr_bgr, 1.0 / gamma)
+            return cls._pos_processar_ldr(ldr_bgr)
+
         tonemap = cv2.createTonemapMantiuk(
-            gamma=gamma, 
+            gamma=1.0, 
             scale=scale, 
             saturation=saturation
         )
-        ldr_bgr = tonemap.process(hdr_bgr)
+        try:
+            ldr_bgr = tonemap.process(hdr_bgr)
+        except cv2.error:
+            ldr_bgr = hdr_bgr / (1.0 + hdr_bgr)
+
+        ldr_bgr = np.nan_to_num(ldr_bgr, nan=0.0, posinf=1.0, neginf=0.0)
+        ldr_bgr = np.clip(ldr_bgr, 0.0, 1.0)
+        if gamma != 1.0:
+            ldr_bgr = np.power(ldr_bgr, 1.0 / gamma)
+
         return cls._pos_processar_ldr(ldr_bgr)
 
     @classmethod
     def aplicar_tone_mapping_logaritmico(
-        cls, hdr_tensor: torch.Tensor, mu: float = 5000.0
+        cls, hdr_tensor: torch.Tensor, mu: float = 50.0
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping Logarítmico (mu-law) isoladamente a um tensor em GPU/CPU."""
+        """Aplica o Tone Mapping Logarítmico (mu-law) normalizado pela escala dinâmica máxima."""
         # Garante que não existam valores negativos
         hdr_tensor = torch.clamp(hdr_tensor, min=0.0)
 
-        # Aplica a fórmula mu-law
-        tonemapped_tensor = torch.log(1.0 + mu * hdr_tensor) / math.log(
+        max_val = torch.max(hdr_tensor)
+        if max_val <= 1e-6:
+            return torch.zeros_like(hdr_tensor)
+
+        # Normaliza pela luminância máxima para que todo o intervalo [0, max] seja mapeado sem saturação/estouro
+        hdr_norm = hdr_tensor / max_val
+
+        # Aplica a fórmula mu-law normalizada
+        tonemapped_tensor = torch.log(1.0 + mu * hdr_norm) / math.log(
             1.0 + mu
         )
 
