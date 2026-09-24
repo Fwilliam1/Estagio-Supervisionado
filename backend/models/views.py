@@ -217,6 +217,7 @@ def historico_api(request):
             is_hdr = 'hdr' in algo_tipo_raw.lower()
             dehazing_model = 'ConvIR' if 'convir' in algo_tipo_raw.lower() else 'UDPNet'
 
+            hdr_model = 'PSHDR' if 'pshdr' in algo_tipo_raw.lower() else 'SAFHDR'
             tone_mapping_val = 'Reinhard'
             if is_hdr:
                 if 'drago' in algo_tipo_raw.lower():
@@ -225,9 +226,14 @@ def historico_api(request):
                     tone_mapping_val = 'Mantiuk'
                 elif 'log' in algo_tipo_raw.lower():
                     tone_mapping_val = 'Logarítmico'
-                elif algo_params_raw:
+
+                if algo_params_raw:
                     try:
                         p = json.loads(algo_params_raw)
+                        if 'modelo_hdr' in p:
+                            hdr_model = 'PSHDR' if 'pshdr' in str(p['modelo_hdr']).lower() else 'SAFHDR'
+                        elif 'modelo' in p and str(p['modelo']).upper() in ('PSHDR', 'SAFHDR'):
+                            hdr_model = 'PSHDR' if 'pshdr' in str(p['modelo']).lower() else 'SAFHDR'
                         if 'tone_mapping' in p:
                             tone_mapping_val = p['tone_mapping']
                     except Exception:
@@ -238,7 +244,7 @@ def historico_api(request):
                 algo_label = f"Super-Resolution ({modelo} {scale}x)"
             elif is_hdr:
                 algo_tipo = 'hdr'
-                algo_label = f"HDR ({tone_mapping_val})"
+                algo_label = f"HDR ({hdr_model} - {tone_mapping_val})"
             else:
                 algo_tipo = 'dehazing'
                 algo_label = f"Image Dehazing ({dehazing_model})"
@@ -257,7 +263,8 @@ def historico_api(request):
                 "processedImage": processed_url,
                 "process": algo_tipo,
                 "scale": scale if is_sr else None,
-                "model": modelo if is_sr else (dehazing_model if not is_hdr else tone_mapping_val),
+                "model": modelo if is_sr else (hdr_model if is_hdr else dehazing_model),
+                "hdrModel": hdr_model if is_hdr else None,
                 "dehazingModel": dehazing_model if not is_sr and not is_hdr else None,
                 "toneMapping": tone_mapping_val if is_hdr else None,
                 "processLabel": algo_label,
@@ -349,9 +356,12 @@ def salvar_imagem_api(request):
             pesos_nome = f"DMNet_X{scale}.pth" if modelo_display == 'DMNet' else f"ESC_DIV2K_X{scale}.pth"
             params_algo = json.dumps({"modelo": modelo_display, "escala": scale, "pesos": pesos_nome})
         elif is_hdr:
+            hdr_model_req = data.get('hdrModel') or data.get('modelo_hdr') or data.get('model') or data.get('modelo') or 'PSHDR'
+            hdr_model_display = 'PSHDR' if 'pshdr' in str(hdr_model_req).lower() else 'SAFHDR'
             tone_mapping_req = data.get('toneMapping') or data.get('tone_mapping') or data.get('tonemap') or 'Reinhard'
-            tipo_algo = f"SAFHDR_{tone_mapping_req}_ToneMapping"
-            params_algo = json.dumps({"modelo": "SAFHDR", "pesos": "model_tm_406392_G.pth", "tone_mapping": tone_mapping_req, "mu_law": 5000.0})
+            tipo_algo = f"{hdr_model_display}_{tone_mapping_req}_ToneMapping"
+            pesos_nome = "PSHDR_G.pth" if hdr_model_display == "PSHDR" else "model_tm_406392_G.pth"
+            params_algo = json.dumps({"modelo": hdr_model_display, "modelo_hdr": hdr_model_display, "pesos": pesos_nome, "tone_mapping": tone_mapping_req, "mu_law": 5000.0})
         else:
             tipo_algo = "dehazing"
             params_algo = json.dumps({"modelo": "UDPNet_FSNet"})
@@ -401,10 +411,16 @@ def salvar_imagem_api(request):
                 "date": created_time.strftime("%d/%m/%Y"),
                 "time": created_time.strftime("%H:%M:%S"),
                 "timestamp": int(imagem.criado_em.timestamp() * 1000) if imagem.criado_em else int(created_time.timestamp() * 1000),
-                "process": "super-resolution" if is_sr else "dehazing",
+                "process": "super-resolution" if is_sr else ("hdr" if is_hdr else "dehazing"),
                 "scale": scale if is_sr else None,
-                "model": modelo_display if is_sr else None,
-                "processLabel": f"Super-Resolution ({modelo_display} {scale}x)" if is_sr else "Image Dehazing",
+                "model": modelo_display if is_sr else (hdr_model_display if is_hdr else None),
+                "hdrModel": hdr_model_display if is_hdr else None,
+                "toneMapping": tone_mapping_req if is_hdr else None,
+                "processLabel": (
+                    f"Super-Resolution ({modelo_display} {scale}x)" if is_sr
+                    else f"HDR ({hdr_model_display} - {tone_mapping_req})" if is_hdr
+                    else "Image Dehazing"
+                ),
                 "fileName": imagem.nomeArquivo,
                 "fileSize": f"{imagem.tamanho:.2f} MB",
                 "dimensions": imagem.resolucao,

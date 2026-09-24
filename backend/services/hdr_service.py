@@ -9,18 +9,19 @@ import cv2
 
 import math
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 
 from .exceptions import ValidacaoError, ServiceException
 
 import sys
-caminho_biblioteca = r'C:\Users\felip\Documents\Estagio-Supervisionado\backend'
-
-if caminho_biblioteca not in sys.path:
-    sys.path.append(caminho_biblioteca)
+backend_dir = str(Path(__file__).resolve().parent.parent)
+if backend_dir not in sys.path:
+    sys.path.append(backend_dir)
 
 from archs.safhdr.SAFHDR import HDRUNet as SAFHDR
+from archs.pshdr.PSHDR import HDRUNet as PSHDR
 
 
 class HdrService_VersãoFELIPEEEmanuel:
@@ -115,13 +116,9 @@ class HdrService_VersãoFELIPEEEmanuel:
         }
 
 
-
-
-
-
 class HDRService:
-    # Variável de classe para armazenar o modelo carregado e dispositivo
-    model = None  
+    # Modelos carregados em cache (Lazy Loading) e dispositivo
+    _models: Dict[str, nn.Module] = {}
     _device: Optional[torch.device] = None
 
     @classmethod
@@ -132,47 +129,86 @@ class HDRService:
         return cls._device
 
     @classmethod
-    def _carregar_modelo(cls):
-        """Carrega o modelo e os pesos apenas se ainda não estiverem na memória (Lazy Loading)."""
-        if cls.model is None:
-            device = cls.get_device()
-            cls.model = SAFHDR().to(device)
+    def normalizar_nome_modelo(cls, model_name: Optional[str]) -> str:
+        """Normaliza o nome do modelo para 'PSHDR' ou 'SAFHDR'."""
+        nome = str(model_name or 'PSHDR').strip().upper()
+        if 'SAF' in nome:
+            return 'SAFHDR'
+        return 'PSHDR'
 
-            # Caminho dinâmico relativo ao backend
-            caminho_peso = Path(__file__).resolve().parent.parent / "pretrained_models" / "model_tm_406392_G.pth"
-            if not caminho_peso.exists():
-                fallback = Path(r"C:\Users\felip\Documents\Estagio-Supervisionado\backend\pretrained_models\model_tm_406392_G.pth")
-                if fallback.exists():
-                    caminho_peso = fallback
-                else:
-                    raise ServiceException(f"Pesos do modelo SAFHDR não encontrados: {caminho_peso}", status_code=500)
+    @classmethod
+    def _carregar_modelo(cls, model_name: str = 'PSHDR') -> nn.Module:
+        """Carrega o modelo e os pesos apenas se ainda não estiverem na memória (Lazy Loading)."""
+        modelo_chave = cls.normalizar_nome_modelo(model_name)
+        if modelo_chave not in cls._models or cls._models[modelo_chave] is None:
+            device = cls.get_device()
+            base_dir = Path(__file__).resolve().parent.parent
+
+            if modelo_chave == 'PSHDR':
+                instancia = PSHDR().to(device)
+                caminho_peso = base_dir / "pretrained_models" / "PSHDR_G.pth"
+                if not caminho_peso.exists():
+                    fallback = Path(r"C:\Users\Emanuel Ramos\Desktop\PSHDR\PSHDR_G.pth")
+                    if fallback.exists():
+                        caminho_peso = fallback
+                    else:
+                        raise ServiceException(
+                            f"Pesos do modelo PSHDR não encontrados em: {caminho_peso}. "
+                            "Certifique-se de que o arquivo 'PSHDR_G.pth' está na pasta 'backend/pretrained_models/'.",
+                            status_code=500
+                        )
+            else:
+                instancia = SAFHDR().to(device)
+                caminho_peso = base_dir / "pretrained_models" / "model_tm_406392_G.pth"
+                if not caminho_peso.exists():
+                    fallback = Path(r"C:\Users\felip\Documents\Estagio-Supervisionado\backend\pretrained_models\model_tm_406392_G.pth")
+                    if fallback.exists():
+                        caminho_peso = fallback
+                    else:
+                        raise ServiceException(
+                            f"Pesos do modelo SAFHDR não encontrados em: {caminho_peso}. "
+                            "Certifique-se de que o arquivo 'model_tm_406392_G.pth' está na pasta 'backend/pretrained_models/'.",
+                            status_code=500
+                        )
 
             state_dict = torch.load(str(caminho_peso), map_location=device, weights_only=True)
 
             if 'params_ema' in state_dict:
-                cls.model.load_state_dict(state_dict['params_ema'], strict=True)
+                instancia.load_state_dict(state_dict['params_ema'], strict=True)
             elif 'params' in state_dict:
-                cls.model.load_state_dict(state_dict['params'], strict=True)
+                instancia.load_state_dict(state_dict['params'], strict=True)
             else:
-                cls.model.load_state_dict(state_dict, strict=True)
+                instancia.load_state_dict(state_dict, strict=True)
 
-            cls.model.eval()
+            instancia.eval()
+            cls._models[modelo_chave] = instancia
+
+        return cls._models[modelo_chave]
+
+    # Propriedade de retrocompatibilidade
+    @classmethod
+    @property
+    def model(cls):
+        return cls._models.get('SAFHDR') or cls._models.get('PSHDR')
 
     @classmethod
     def _pre_processar_hdr(cls, hdr_tensor: torch.Tensor) -> np.ndarray:
         """Remove batch, converte Tensor (C, H, W) RGB para NumPy (H, W, C) BGR e garante float32."""
         if hdr_tensor.dim() == 4:
             hdr_tensor = hdr_tensor.squeeze(0)
-            
+
         hdr_np = hdr_tensor.detach().cpu().numpy()
         hdr_np = np.transpose(hdr_np, (1, 2, 0))
+        hdr_np = np.nan_to_num(hdr_np, nan=0.0, posinf=1.0, neginf=0.0)
         hdr_np = np.float32(np.clip(hdr_np, 0.0, None))
-        
+
         return cv2.cvtColor(hdr_np, cv2.COLOR_RGB2BGR)
 
     @classmethod
     def _pos_processar_ldr(cls, ldr_bgr: np.ndarray) -> torch.Tensor:
         """Converte BGR para RGB, reordena para (C, H, W) e retorna Tensor clampeado [0.0, 1.0]."""
+        ldr_bgr = np.nan_to_num(ldr_bgr, nan=0.0, posinf=1.0, neginf=0.0)
+        ldr_bgr = np.clip(ldr_bgr, 0.0, 1.0)
         ldr_rgb = cv2.cvtColor(ldr_bgr, cv2.COLOR_BGR2RGB)
         ldr_tensor = torch.from_numpy(np.transpose(ldr_rgb, (2, 0, 1)))
         return torch.clamp(ldr_tensor, 0.0, 1.0)
@@ -258,10 +294,11 @@ class HDRService:
         image_bytes: bytes, 
         clip_limit: float = 2.5, 
         tile_grid_size: int = 8,
-        tone_mapping: str = 'reinhard'
+        tone_mapping: str = 'reinhard',
+        model_name: str = 'PSHDR'
     ) -> Dict[str, Any]:
         """
-        Processa os bytes da imagem aplicando algoritmo HDR (SAFHDR), passando pelo modelo
+        Processa os bytes da imagem aplicando algoritmo HDR (PSHDR ou SAFHDR), passando pelo modelo
         e aplicando um dos 4 operadores de tone mapping (Reinhard, Drago, Mantiuk, Logarítmico).
         Garante padding para que qualquer dimensão de imagem seja processada sem incompatibilidade de tensores.
         """
@@ -270,8 +307,9 @@ class HDRService:
 
         start_time = time.perf_counter()
 
-        # 1. Garante que o modelo está carregado antes de processar
-        cls._carregar_modelo()
+        # 1. Garante que o modelo desejado está carregado antes de processar
+        modelo_norm = cls.normalizar_nome_modelo(model_name)
+        modelo_instancia = cls._carregar_modelo(modelo_norm)
         device = cls.get_device()
 
         # 2. Carrega a imagem e converte para tensor
@@ -286,8 +324,6 @@ class HDRService:
         tensor_img = transforms.ToTensor()(pil_image).unsqueeze(0).to(device)
 
         # 3. Padding para garantir que a resolução seja múltipla de 16
-        # SAFHDR utiliza duas camadas com stride 2 e upsample PixelShuffle(2). Se w ou h
-        # não forem múltiplos de 4, dimensões intermediárias não batem nas conexões residuais.
         factor = 16
         pad_h = (factor - orig_h % factor) % factor
         pad_w = (factor - orig_w % factor) % factor
@@ -300,7 +336,7 @@ class HDRService:
 
         # 4. Passa pelo modelo inferindo sem gradiente
         with torch.no_grad():
-            output_padded = cls.model(padded_input)
+            output_padded = modelo_instancia(padded_input)
 
         # Corta o padding excedente para retornar o tamanho original exato
         output = output_padded[:, :, :orig_h, :orig_w]
@@ -351,7 +387,8 @@ class HDRService:
             "largura_processada": proc_w,
             "altura_processada": proc_h,
             "resolucao_processada": f"{proc_w}x{proc_h}",
-            "modelo": f"SAFHDR ({tm_nome})",
+            "modelo": f"{modelo_norm} ({tm_nome})",
+            "modelo_hdr": modelo_norm,
             "tone_mapping": tm_nome,
             "tempo_processamento": round(elapsed_time, 3),
             "tempo_execucao_segundos": round(elapsed_time, 3),

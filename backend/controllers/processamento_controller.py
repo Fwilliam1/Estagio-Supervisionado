@@ -47,10 +47,20 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
                 modelo = 'udpnet'
             elif 'esc' in tipo_algoritmo.lower():
                 modelo = 'ESC'
+            elif tipo_algoritmo.lower() in ('hdr', 'safhdr', 'pshdr'):
+                modelo = 'PSHDR' if 'pshdr' in tipo_algoritmo.lower() else 'SAFHDR'
             else:
                 modelo = 'DMNet'
         else:
             modelo = modelo_param
+
+        modelo_hdr = (
+            request.POST.get('modelo_hdr') or
+            request.POST.get('model_hdr') or
+            request.POST.get('hdr_model') or
+            (modelo if str(modelo).upper() in ('PSHDR', 'SAFHDR') else None) or
+            ('PSHDR' if 'pshdr' in tipo_algoritmo.lower() else 'SAFHDR')
+        )
 
         tone_mapping = (
             request.POST.get('tone_mapping') or
@@ -62,6 +72,7 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
 
         opcoes = {
             'modelo': modelo,
+            'modelo_hdr': modelo_hdr,
             'version': request.POST.get('version') or request.POST.get('versao') or 'small',
             'encoder': request.POST.get('encoder', 'vits'),
             'grayscale': request.POST.get('grayscale', 'true').lower() in ('true', '1', 'yes'),
@@ -102,10 +113,20 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
                         modelo = 'udpnet'
                     elif 'esc' in tipo_algoritmo.lower():
                         modelo = 'ESC'
+                    elif tipo_algoritmo.lower() in ('hdr', 'safhdr', 'pshdr'):
+                        modelo = 'PSHDR' if 'pshdr' in tipo_algoritmo.lower() else 'SAFHDR'
                     else:
                         modelo = 'DMNet'
                 else:
                     modelo = modelo_param
+
+                modelo_hdr = (
+                    body.get('modelo_hdr') or
+                    body.get('model_hdr') or
+                    body.get('hdr_model') or
+                    (modelo if str(modelo).upper() in ('PSHDR', 'SAFHDR') else None) or
+                    ('PSHDR' if 'pshdr' in tipo_algoritmo.lower() else 'SAFHDR')
+                )
 
                 tone_mapping = (
                     body.get('tone_mapping') or
@@ -117,6 +138,7 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
 
                 opcoes = {
                     'modelo': modelo,
+                    'modelo_hdr': modelo_hdr,
                     'version': body.get('version') or body.get('versao') or 'small',
                     'encoder': body.get('encoder', 'vits'),
                     'grayscale': str(body.get('grayscale', 'true')).lower() in ('true', '1', 'yes'),
@@ -145,7 +167,7 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
 def processamento_router_view(request: HttpRequest) -> JsonResponse:
     """
     Roteador genérico para processamento de imagem (/api/processar/).
-    Encaminha para Dehazing (Depth Anything V2 + UDPNet FSNet OTS ou ConvIR), Depth ou Super-Resolução (DMNet ou ESC).
+    Encaminha para Dehazing (Depth Anything V2 + UDPNet FSNet OTS ou ConvIR), Depth, Super-Resolução (DMNet ou ESC) ou HDR (PSHDR ou SAFHDR).
     """
     if request.method != 'POST':
         return JsonResponse({
@@ -162,7 +184,9 @@ def processamento_router_view(request: HttpRequest) -> JsonResponse:
             return _executar_dehazing(request, image_bytes, nome_arquivo, opcoes)
         elif tipo_algoritmo.lower() in ('depth', 'profundidade', 'depth-anything'):
             return _executar_depth(request, image_bytes, nome_arquivo, opcoes)
-        elif tipo_algoritmo.lower() in ('hdr', 'safhdr'):
+        elif tipo_algoritmo.lower() in ('hdr', 'safhdr', 'pshdr'):
+            if 'pshdr' in tipo_algoritmo.lower():
+                opcoes['modelo_hdr'] = 'PSHDR'
             return _executar_hdr(request, image_bytes, nome_arquivo, opcoes)
         else:
             return _executar_super_resolution(request, image_bytes, nome_arquivo, escala, opcoes.get('modelo', 'DMNet'))
@@ -542,28 +566,41 @@ def _executar_hdr(request: HttpRequest, image_bytes: bytes, nome_arquivo: str, o
         opcoes.get('tonemap') or
         'reinhard'
     )
+    modelo_raw = (
+        opcoes.get('modelo_hdr') or
+        opcoes.get('hdr_model') or
+        opcoes.get('model_hdr') or
+        opcoes.get('modelo') or
+        opcoes.get('model') or
+        'PSHDR'
+    )
+    modelo_hdr = 'PSHDR' if 'pshdr' in str(modelo_raw).lower() else 'SAFHDR'
 
     # Chama o serviço
     resultado = HDRService.processar_imagem(
         image_bytes=image_bytes,
         clip_limit=clip_limit,
         tile_grid_size=tile_grid_size,
-        tone_mapping=tone_mapping
+        tone_mapping=tone_mapping,
+        model_name=modelo_hdr
     )
 
     tm_aplicado = resultado.get("tone_mapping", str(tone_mapping).capitalize())
+    modelo_aplicado = resultado.get("modelo_hdr", modelo_hdr)
 
     # Configuração dos metadados para salvar no banco
-    tipo_algoritmo_str = f"SAFHDR_{tm_aplicado}_ToneMapping"
+    tipo_algoritmo_str = f"{modelo_aplicado}_{tm_aplicado}_ToneMapping"
+    pesos_nome = "PSHDR_G.pth" if modelo_aplicado == "PSHDR" else "model_tm_406392_G.pth"
     algoritmo_params = {
-        "modelo": "SAFHDR",
-        "pesos": "model_tm_406392_G.pth",
+        "modelo": modelo_aplicado,
+        "modelo_hdr": modelo_aplicado,
+        "pesos": pesos_nome,
         "tone_mapping": tm_aplicado,
         "mu_law": 5000.0,
         "clip_limit": clip_limit,
         "tile_grid_size": tile_grid_size
     }
-    msg_sucesso = f"Processamento HDR ({tm_aplicado}) aplicado com sucesso via SAFHDR!"
+    msg_sucesso = f"Processamento HDR ({modelo_aplicado} - {tm_aplicado}) aplicado com sucesso via {modelo_aplicado}!"
 
     # Tratamento do formato da imagem
     formato = "PNG"
@@ -639,8 +676,9 @@ def _executar_hdr(request: HttpRequest, image_bytes: bytes, nome_arquivo: str, o
             "altura_processada": proc_h,
             "tempo_execucao_segundos": resultado["tempo_execucao_segundos"],
             "tamanho_original_kb": resultado["tamanho_original_kb"],
-            "modelo": f"SAFHDR ({tm_aplicado})",
-            "modelo_hdr": "SAFHDR",
+            "tamanho_processado_kb": resultado["tamanho_processado_kb"],
+            "modelo": f"{modelo_aplicado} ({tm_aplicado})",
+            "modelo_hdr": modelo_aplicado,
             "tone_mapping": tm_aplicado,
             "dispositivo": resultado.get("dispositivo", "CPU")
         }
