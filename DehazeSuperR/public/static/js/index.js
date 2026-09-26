@@ -139,23 +139,44 @@ $(document).ready(function() {
     // Setup video autoplay for carousel
     setupVideoCarouselAutoplay();
 
-    // Image comparison slider functionality
-    const slider = document.getElementById('comparison-slider');
-    const image2Container = document.getElementById('image2-container');
-    const sliderLine = document.getElementById('slider-line');
-    const sliderButton = document.getElementById('slider-button');
+// Setup video autoplay for carousel
+setupVideoCarouselAutoplay();
 
-    function updateComparison(value) {
-        const percent = Number(value);
-        image2Container.style.clipPath = `inset(0 ${100 - percent}% 0 0)`;
-        sliderLine.style.left = `${percent}%`;
-        sliderButton.style.left = `${percent}%`;
-    }
+// Initialize image comparison slider
+const slider = document.getElementById('comparison-slider');
+const image2Container = document.getElementById('image2-container');
+const sliderLine = document.getElementById('slider-line');
+const sliderButton = document.getElementById('slider-button');
 
-    // Initialize to default value (50%)
-    updateComparison(slider.value);
+function updateSlider() {
+    const val = parseInt(slider.value, 10);
+    // Update clipping of the overlaid image
+    image2Container.style.clipPath = `inset(0 ${100 - val}% 0 0)`;
+    // Move visual line and button
+    const leftPos = `${val}%`;
+    sliderLine.style.left = leftPos;
+    sliderButton.style.left = leftPos;
+}
 
-    // Listen to input changes (mouse drag, touch, keyboard)
-    slider.addEventListener('input', (e) => updateComparison(e.target.value));
-    slider.addEventListener('change', (e) => updateComparison(e.target.value));
-})
+// Set initial state
+updateSlider();
+// Listen for slider input changes
+slider.addEventListener('input', updateSlider);
+
+    // Add click handlers for method buttons to change images
+    const methodButtons = document.querySelectorAll('.method-selector button');
+    methodButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const leftSrc = btn.dataset.left;
+            const rightSrc = btn.dataset.right;
+            if (leftSrc) {
+                document.querySelector('#image2-container img').src = leftSrc;
+            }
+            if (rightSrc) {
+                document.querySelector('.image-container img').src = rightSrc;
+            }
+            // Update slider to reflect default position
+            updateSlider();
+        });
+    });
+});
