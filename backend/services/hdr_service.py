@@ -200,7 +200,8 @@ class HDRService:
         hdr_np = hdr_tensor.detach().cpu().numpy()
         hdr_np = np.transpose(hdr_np, (1, 2, 0))
         hdr_np = np.nan_to_num(hdr_np, nan=0.0, posinf=1.0, neginf=0.0)
-        hdr_np = np.float32(np.clip(hdr_np, 0.0, None))
+        # Clamping com piso pequeno (1e-6) previne log(0) ou divisões por zero nas rotinas C++ do OpenCV
+        hdr_np = np.float32(np.clip(hdr_np, 1e-6, None))
 
         return cv2.cvtColor(hdr_np, cv2.COLOR_RGB2BGR)
 
@@ -217,11 +218,17 @@ class HDRService:
     def aplicar_tone_mapping_drago_cv2(
         cls, 
         hdr_tensor: torch.Tensor, 
-        gamma: float = 2.2, 
-        saturation: float = 1.0, 
-        bias: float = 1.0
+        gamma: float = 1.25, 
+        saturation: float = 0.9, 
+        bias: float = 0.85
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping de Drago usando o OpenCV."""
+        """
+        Aplica o Tone Mapping de Drago (Adaptive Logarithmic Mapping) usando OpenCV.
+        - bias=0.85: Calibrado segundo a literatura de Drago et al. (2003) para evitar a 
+          compressão degenerada que estoura as altas luzes (comum com bias=1.0).
+        - gamma=1.25: Proporciona contraste natural sem superexposição.
+        - saturation=0.9: Evita distorções cromáticas em realces luminosos.
+        """
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
         tonemap = cv2.createTonemapDrago(
             gamma=gamma, 
@@ -235,12 +242,17 @@ class HDRService:
     def aplicar_tone_mapping_reinhard_cv2(
         cls, 
         hdr_tensor: torch.Tensor, 
-        gamma: float = 1.0, 
+        gamma: float = 1.2, 
         intensity: float = 0.0, 
-        light_adapt: float = 0.0, 
-        color_adapt: float = 1.0
+        light_adapt: float = 0.2, 
+        color_adapt: float = 0.5
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping de Reinhard usando o OpenCV."""
+        """
+        Aplica o Tone Mapping de Reinhard (Photographic Tone Reproduction) usando OpenCV.
+        - gamma=1.2: Expansão suave de gama para exibição, evitando tanto o escurecimento excessivo de sombras quanto o estouro de altas luzes.
+        - light_adapt=0.2: Adaptação local de luminância que preserva a textura em áreas claras (janelas, lâmpadas) sem achatar o contraste da cena.
+        - color_adapt=0.5: Preserva a fidelidade e saturação natural das cores cromáticas.
+        """
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
         tonemap = cv2.createTonemapReinhard(
             gamma=gamma, 
@@ -255,11 +267,15 @@ class HDRService:
     def aplicar_tone_mapping_mantiuk_cv2(
         cls, 
         hdr_tensor: torch.Tensor, 
-        gamma: float = 2.2, 
-        scale: float = 0.7, 
+        gamma: float = 1.3, 
+        scale: float = 0.8, 
         saturation: float = 1.0
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping de Mantiuk usando o OpenCV."""
+        """
+        Aplica o Tone Mapping de Mantiuk (Contrast Processing Framework) usando OpenCV.
+        - scale=0.8: Fator de escala de contraste que comprime gradientes extremos sem clipar picos de luminância.
+        - gamma=1.3: Mantém pretos profundos e médios nítidos sem gerar efeito leitoso / neblina.
+        """
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
         tonemap = cv2.createTonemapMantiuk(
             gamma=gamma, 
@@ -271,18 +287,36 @@ class HDRService:
 
     @classmethod
     def aplicar_tone_mapping_logaritmico(
-        cls, hdr_tensor: torch.Tensor, mu: float = 5000.0
+        cls, 
+        hdr_tensor: torch.Tensor, 
+        mu: float = 20.0,
+        white_point_quantile: float = 0.998
     ) -> torch.Tensor:
-        """Aplica o Tone Mapping Logarítmico (mu-law) isoladamente a um tensor em GPU/CPU."""
-        # Garante que não existam valores negativos
+        """
+        Aplica o Tone Mapping Logarítmico (mu-law) com normalização adaptativa do ponto branco.
+        Sem a normalização por L_white, qualquer radiância linear HDR > 1.0 é truncada pelo clamp para 1.0,
+        destruindo completamente os realces (luz estourada).
+        Ao normalizar por L_white (99.8º percentil), a curva logarítmica comprime continuamente toda a faixa
+        dinâmica [0, L_white] para [0, 1] com decaimento suave e preservação total de detalhes luminosos.
+        """
+        # Garante que não existam valores negativos ou NaNs
+        hdr_tensor = torch.nan_to_num(hdr_tensor, nan=0.0, posinf=1.0, neginf=0.0)
         hdr_tensor = torch.clamp(hdr_tensor, min=0.0)
 
-        # Aplica a fórmula mu-law
-        tonemapped_tensor = torch.log(1.0 + mu * hdr_tensor) / math.log(
-            1.0 + mu
-        )
+        # Calcula ponto branco adaptativo (99.8º percentil para robustez contra ruídos impulsivos)
+        if hdr_tensor.numel() > 0:
+            l_white = float(torch.quantile(hdr_tensor, white_point_quantile))
+        else:
+            l_white = 1.0
+        l_white = max(1.0, l_white)
 
-        # Garante que os valores fiquem entre 0.0 e 1.0
+        # Tensor normalizado para que as altas luzes caibam no domínio [0, 1]
+        hdr_norm = hdr_tensor / l_white
+
+        # Aplica a fórmula mu-law com fator mu calibrado
+        tonemapped_tensor = torch.log(1.0 + mu * hdr_norm) / math.log(1.0 + mu)
+
+        # Garante que os valores fiquem estritamente entre 0.0 e 1.0
         return torch.clamp(tonemapped_tensor, 0.0, 1.0)
 
     # Alias de compatibilidade
@@ -295,7 +329,7 @@ class HDRService:
         clip_limit: float = 2.5, 
         tile_grid_size: int = 8,
         tone_mapping: str = 'reinhard',
-        model_name: str = 'PSHDR'
+        model_name: str = 'SAFHDR'
     ) -> Dict[str, Any]:
         """
         Processa os bytes da imagem aplicando algoritmo HDR (PSHDR ou SAFHDR), passando pelo modelo
@@ -387,7 +421,8 @@ class HDRService:
             "largura_processada": proc_w,
             "altura_processada": proc_h,
             "resolucao_processada": f"{proc_w}x{proc_h}",
-            "modelo": f"{modelo_norm} ({tm_nome})",
+            "modelo": modelo_norm,
+            "modelo_display": f"{modelo_norm} ({tm_nome})",
             "modelo_hdr": modelo_norm,
             "tone_mapping": tm_nome,
             "tempo_processamento": round(elapsed_time, 3),

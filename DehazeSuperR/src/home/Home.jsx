@@ -941,7 +941,7 @@ export default function Home({
                     disabled={isProcessing}
                   >
                     <span>DMNet</span>
-                    <small className="pill-subtext">Dual Multi-scale Attention</small>
+                    <small className="pill-subtext">Dual-domain Modulation Network</small>
                   </button>
                   <button
                     type="button"
@@ -1027,7 +1027,7 @@ export default function Home({
                     disabled={isProcessing}
                   >
                     <span>PSHDR</span>
-                    <small className="pill-subtext">Point-Supervised HDR (Atenção e SFT)</small>
+                    <small className="pill-subtext">Pavic Single HDR</small>
                   </button>
                   <button
                     type="button"
@@ -1040,7 +1040,7 @@ export default function Home({
                     disabled={isProcessing}
                   >
                     <span>SAFHDR</span>
-                    <small className="pill-subtext">Spatial Alignment & Fusion HDR</small>
+                    <small className="pill-subtext">Single Attention Feature for HDR</small>
                   </button>
                 </div>
               </div>

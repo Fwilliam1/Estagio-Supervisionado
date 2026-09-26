@@ -572,7 +572,7 @@ def _executar_hdr(request: HttpRequest, image_bytes: bytes, nome_arquivo: str, o
         opcoes.get('model_hdr') or
         opcoes.get('modelo') or
         opcoes.get('model') or
-        'PSHDR'
+        'SAFHDR'
     )
     modelo_hdr = 'PSHDR' if 'pshdr' in str(modelo_raw).lower() else 'SAFHDR'
 
@@ -676,8 +676,8 @@ def _executar_hdr(request: HttpRequest, image_bytes: bytes, nome_arquivo: str, o
             "altura_processada": proc_h,
             "tempo_execucao_segundos": resultado["tempo_execucao_segundos"],
             "tamanho_original_kb": resultado["tamanho_original_kb"],
-            "tamanho_processado_kb": resultado["tamanho_processado_kb"],
-            "modelo": f"{modelo_aplicado} ({tm_aplicado})",
+            "modelo": modelo_aplicado,
+            "modelo_display": f"{modelo_aplicado} ({tm_aplicado})",
             "modelo_hdr": modelo_aplicado,
             "tone_mapping": tm_aplicado,
             "dispositivo": resultado.get("dispositivo", "CPU")

@@ -356,7 +356,7 @@ def salvar_imagem_api(request):
             pesos_nome = f"DMNet_X{scale}.pth" if modelo_display == 'DMNet' else f"ESC_DIV2K_X{scale}.pth"
             params_algo = json.dumps({"modelo": modelo_display, "escala": scale, "pesos": pesos_nome})
         elif is_hdr:
-            hdr_model_req = data.get('hdrModel') or data.get('modelo_hdr') or data.get('model') or data.get('modelo') or 'PSHDR'
+            hdr_model_req = data.get('hdrModel') or data.get('modelo_hdr') or data.get('model') or data.get('modelo') or 'SAFHDR'
             hdr_model_display = 'PSHDR' if 'pshdr' in str(hdr_model_req).lower() else 'SAFHDR'
             tone_mapping_req = data.get('toneMapping') or data.get('tone_mapping') or data.get('tonemap') or 'Reinhard'
             tipo_algo = f"{hdr_model_display}_{tone_mapping_req}_ToneMapping"
