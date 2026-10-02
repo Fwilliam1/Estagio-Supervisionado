@@ -3,7 +3,7 @@ import pavicLogo from '../assets/pavic_logo.jpg'
 import { authApi } from '../services/authApi'
 import './Login.css'
 
-export default function Login({ onLogin, onNavigateToRegister }) {
+export default function Login({ onLogin, onNavigateToRegister, onNavigateToLanding }) {
   const [view, setView] = useState('login') // 'login' | 'forgot-password' | 'success-reset'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -226,6 +226,25 @@ export default function Login({ onLogin, onNavigateToRegister }) {
                   </svg>
                   <span>Cadastrar nova conta</span>
                 </button>
+
+                {/* Link para Landing Page / Sobre o Projeto */}
+                <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                  <button
+                    type="button"
+                    onClick={onNavigateToLanding || (() => { window.location.hash = '#landing' })}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--brand-blue, #2563eb)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    Apresentação do Projeto
+                  </button>
+                </div>
               </form>
             </div>
           )}

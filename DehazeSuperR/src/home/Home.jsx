@@ -17,6 +17,7 @@ export default function Home({
   currentUser,
   onLogout,
   onNavigateToHistory,
+  onNavigateToLanding,
   pendingHistoryItem,
   onClearPendingHistoryItem,
 }) {
@@ -646,6 +647,30 @@ export default function Home({
           </div>
 
           <div className="header-action-group">
+            {/* Sobre / Landing Page Button */}
+            <button
+              type="button"
+              className="btn-history-nav"
+              onClick={onNavigateToLanding || (() => { window.location.hash = '#landing' })}
+              title="Apresentação do Projeto (Landing Page)"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span>Sobre</span>
+            </button>
+
             {/* Histórico Button */}
             <button
               type="button"
