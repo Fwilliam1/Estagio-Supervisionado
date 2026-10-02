@@ -147,7 +147,11 @@ export async function fetchUserHistoryFromApi(userEmail) {
 
         // Atualiza o cache local com os dados vindos do banco de dados
         const key = `${HISTORY_PREFIX}${userEmail.toLowerCase()}`
-        localStorage.setItem(key, JSON.stringify(formattedHistory))
+        try {
+          localStorage.setItem(key, JSON.stringify(formattedHistory))
+        } catch (e) {
+          console.warn('Erro ao atualizar cache local com dados da API.', e)
+        }
         return formattedHistory
       }
     }
@@ -246,8 +250,12 @@ export async function saveHistoryItem(userEmail, item) {
       (!newItem.db_id || existing.db_id !== newItem.db_id)
   )
 
-  const updatedList = [newItem, ...filteredList].slice(0, 50)
-  localStorage.setItem(key, JSON.stringify(updatedList))
+  const updatedList = [newItem, ...filteredList].slice(0, 15)
+  try {
+    localStorage.setItem(key, JSON.stringify(updatedList))
+  } catch (e) {
+    console.warn('Erro ao salvar no localStorage (limite de quota excedido?). Continuando para a API...', e)
+  }
 
   // 2. Se a imagem já foi salva no backend durante a inferência (skipApiSave: true), não precisa reenviar
   if (item.skipApiSave) {
@@ -285,7 +293,11 @@ export async function saveHistoryItem(userEmail, item) {
         const listWithDbId = getUserHistory(userEmail).map((it) =>
           it.id === finalId ? { ...it, db_id: apiData.item.db_id, id: `db_${apiData.item.db_id}` } : it
         )
-        localStorage.setItem(key, JSON.stringify(listWithDbId))
+        try {
+          localStorage.setItem(key, JSON.stringify(listWithDbId))
+        } catch (e) {
+          console.warn('Erro ao atualizar localStorage com db_id.', e)
+        }
       }
     }
   } catch (err) {

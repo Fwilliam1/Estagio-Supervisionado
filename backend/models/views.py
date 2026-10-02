@@ -157,7 +157,7 @@ def historico_api(request):
         if not usuario:
             return JsonResponse({"success": True, "history": []})
 
-        imagens = Imagem.objects.filter(usuario=usuario).select_related('algoritmo').order_by('-id')
+        imagens = Imagem.objects.filter(usuario=usuario).select_related('algoritmo').order_by('-id')[:15]
 
         history_list = []
         seen_items = set()

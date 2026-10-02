@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import pavicLogo from '../assets/pavic_logo.jpg'
-import { getUserHistory, saveHistoryItem } from '../utils/historyStorage'
+import { getUserHistory, saveHistoryItem, fetchUserHistoryFromApi } from '../utils/historyStorage'
 import { imageApi } from '../services/imageApi'
 import { authApi } from '../services/authApi'
 import './Home.css'
@@ -136,6 +136,11 @@ export default function Home({
     const email = currentUser?.email || authApi.getCurrentUser()?.email
     if (email) {
       setHistoryCount(getUserHistory(email).length)
+      fetchUserHistoryFromApi(email)
+        .then((list) => {
+          if (Array.isArray(list)) setHistoryCount(list.length)
+        })
+        .catch(() => {})
     }
   }, [currentUser])
 
@@ -478,21 +483,32 @@ export default function Home({
       setErrorMessage('Por favor, selecione um arquivo de imagem válido (PNG, JPG, JPEG).')
       return
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setErrorMessage('O tamanho do arquivo deve ser de até 10MB.')
-      return
-    }
 
-    setErrorMessage('')
-    setSelectedFile(file)
+    const imgUrl = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(imgUrl)
+      if (img.width > 1920 || img.height > 1080) {
+        setErrorMessage('A resolução da imagem não deve ultrapassar Full HD (1920x1080px).')
+        return
+      }
 
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      setOriginalImageUrl(e.target.result)
-      setProcessedImageUrl(null)
-      setProcessMeta(null)
+      setErrorMessage('')
+      setSelectedFile(file)
+
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setOriginalImageUrl(e.target.result)
+        setProcessedImageUrl(null)
+        setProcessMeta(null)
+      }
+      reader.readAsDataURL(file)
     }
-    reader.readAsDataURL(file)
+    img.onerror = () => {
+      URL.revokeObjectURL(imgUrl)
+      setErrorMessage('Erro ao ler a resolução da imagem.')
+    }
+    img.src = imgUrl
   }
 
   const handleDragOver = (e) => {
@@ -515,6 +531,7 @@ export default function Home({
 
   const removeFile = (e) => {
     e.stopPropagation()
+    if (isProcessing) return
     setSelectedFile(null)
     setOriginalImageUrl(null)
     setProcessedImageUrl(null)
@@ -1171,7 +1188,7 @@ export default function Home({
             <div className="upload-title">
               Arraste sua imagem ou clique para enviar
             </div>
-            <div className="upload-subtitle">PNG, JPG ou JPEG · até 10MB</div>
+            <div className="upload-subtitle">PNG, JPG ou JPEG · até 1920x1080</div>
 
             {selectedFile && (
               <div className="file-info-badge">
@@ -1187,6 +1204,7 @@ export default function Home({
                   type="button"
                   className="btn-remove-file"
                   onClick={removeFile}
+                  disabled={isProcessing}
                 >
                   Remover
                 </button>

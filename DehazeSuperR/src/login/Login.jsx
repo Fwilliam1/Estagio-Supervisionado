@@ -4,11 +4,10 @@ import { authApi } from '../services/authApi'
 import './Login.css'
 
 export default function Login({ onLogin, onNavigateToRegister, onNavigateToLanding }) {
-  const [view, setView] = useState('login') // 'login' | 'forgot-password' | 'success-reset'
+  const [view, setView] = useState('login') // 'login'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [rememberMe, setRememberMe] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -38,10 +37,6 @@ export default function Login({ onLogin, onNavigateToRegister, onNavigateToLandi
     }
   }
 
-  const handleForgotPasswordSubmit = (e) => {
-    e.preventDefault()
-    setView('success-reset')
-  }
 
   return (
     <div className="app-container login-page-wrapper">
@@ -162,27 +157,7 @@ export default function Login({ onLogin, onNavigateToRegister, onNavigateToLandi
                   </div>
                 </div>
 
-                {/* Opções extras: Lembrar de mim & Esqueci a senha */}
-                <div className="login-options-row">
-                  <label className="remember-me-label">
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      className="custom-checkbox"
-                      disabled={isLoading}
-                    />
-                    <span>Lembrar de mim</span>
-                  </label>
-                  <button
-                    type="button"
-                    className="btn-forgot-password"
-                    onClick={() => setView('forgot-password')}
-                    disabled={isLoading}
-                  >
-                    Esqueci a senha
-                  </button>
-                </div>
+
 
                 {/* Botão de Entrar */}
                 <button
@@ -249,92 +224,7 @@ export default function Login({ onLogin, onNavigateToRegister, onNavigateToLandi
             </div>
           )}
 
-          {/* View: Esqueci a Senha */}
-          {view === 'forgot-password' && (
-            <div className="login-card">
-              <div className="login-card-header">
-                <div className="category-tag">
-                  <span className="category-line"></span>
-                  RECUPERAÇÃO DE CONTA
-                </div>
-                <h1 className="login-title">
-                  Recuperar <span className="highlight">senha</span>
-                </h1>
-                <p className="login-subtitle">
-                  Informe o seu e-mail cadastrado e enviaremos as instruções para redefinição.
-                </p>
-              </div>
 
-              <form onSubmit={handleForgotPasswordSubmit} className="login-form">
-                <div className="form-group">
-                  <label htmlFor="reset-email" className="form-label">
-                    E-MAIL
-                  </label>
-                  <div className="input-icon-wrapper">
-                    <span className="input-icon">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="2" y="4" width="20" height="16" rx="2" />
-                        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                      </svg>
-                    </span>
-                    <input
-                      id="reset-email"
-                      type="email"
-                      className="form-input"
-                      placeholder="seu.email@exemplo.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <button type="submit" className="btn-login-submit">
-                  <span>Enviar link de recuperação</span>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
-                </button>
-
-                <button
-                  type="button"
-                  className="btn-back-to-login"
-                  onClick={() => setView('login')}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="19" y1="12" x2="5" y2="12" />
-                    <polyline points="12 19 5 12 12 5" />
-                  </svg>
-                  <span>Voltar para o login</span>
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* View: E-mail Enviado */}
-          {view === 'success-reset' && (
-            <div className="login-card success-card">
-              <div className="success-icon-circle">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              </div>
-              <h2 className="login-title">E-mail enviado!</h2>
-              <p className="login-subtitle">
-                Enviamos as instruções de recuperação para <strong>{email || 'seu e-mail'}</strong>. Verifique sua caixa de entrada.
-              </p>
-
-              <button
-                type="button"
-                className="btn-login-submit"
-                onClick={() => setView('login')}
-                style={{ marginTop: '20px' }}
-              >
-                <span>Voltar para o login</span>
-              </button>
-            </div>
-          )}
         </div>
       </main>
 
