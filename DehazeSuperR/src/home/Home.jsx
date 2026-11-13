@@ -68,10 +68,10 @@ export default function Home({
     return 'Reinhard'
   })
   const [selectedHdrModel, setSelectedHdrModel] = useState(() => {
-    if (pendingHistoryItem?.hdrModel && ['SAFHDR', 'HDRUNet'].includes(pendingHistoryItem.hdrModel)) {
+    if (pendingHistoryItem?.hdrModel && ['DCDRUNet', 'HDRUNet'].includes(pendingHistoryItem.hdrModel)) {
       return pendingHistoryItem.hdrModel
     }
-    if (pendingHistoryItem?.model && ['SAFHDR', 'HDRUNet'].includes(pendingHistoryItem.model)) {
+    if (pendingHistoryItem?.model && ['DCDRUNet', 'HDRUNet'].includes(pendingHistoryItem.model)) {
       return pendingHistoryItem.model
     }
     const raw = (
@@ -81,7 +81,7 @@ export default function Home({
       ' ' +
       String(pendingHistoryItem?.model || '')
     ).toLowerCase()
-    if (raw.includes('safhdr')) return 'SAFHDR'
+    if (raw.includes('dcdrunet') || raw.includes('dcdr')) return 'DCDRUNet'
     if (raw.includes('hdrunet')) return 'HDRUNet'
     return 'HDRUNet'
   })
@@ -420,12 +420,12 @@ export default function Home({
       }
 
       let hdrModel = 'HDRUNet'
-      if (pendingHistoryItem.hdrModel && ['SAFHDR', 'HDRUNet'].includes(pendingHistoryItem.hdrModel)) {
+      if (pendingHistoryItem.hdrModel && ['DCDRUNet', 'HDRUNet'].includes(pendingHistoryItem.hdrModel)) {
         hdrModel = pendingHistoryItem.hdrModel
-      } else if (pendingHistoryItem.model && ['SAFHDR', 'HDRUNet'].includes(pendingHistoryItem.model)) {
+      } else if (pendingHistoryItem.model && ['DCDRUNet', 'HDRUNet'].includes(pendingHistoryItem.model)) {
         hdrModel = pendingHistoryItem.model
-      } else if (rawProcess.includes('safhdr') || rawLabel.includes('safhdr')) {
-        hdrModel = 'SAFHDR'
+      } else if (rawProcess.includes('dcdrunet') || rawLabel.includes('dcdrunet') || rawProcess.includes('dcdr') || rawLabel.includes('dcdr')) {
+        hdrModel = 'DCDRUNet'
       } else if (rawProcess.includes('hdrunet') || rawLabel.includes('hdrunet')) {
         hdrModel = 'HDRUNet'
       }
@@ -1070,16 +1070,16 @@ export default function Home({
                   </button>
                   <button
                     type="button"
-                    className={`scale-pill-btn model-pill-btn ${selectedHdrModel === 'SAFHDR' ? 'active' : ''}`}
+                    className={`scale-pill-btn model-pill-btn ${selectedHdrModel === 'DCDRUNet' ? 'active' : ''}`}
                     onClick={() => {
-                      setSelectedHdrModel('SAFHDR')
+                      setSelectedHdrModel('DCDRUNet')
                       setProcessedImageUrl(null)
                       setProcessMeta(null)
                     }}
                     disabled={isProcessing}
                   >
-                    <span>SAFHDR</span>
-                    <small className="pill-subtext">Single Attention Feature for HDR</small>
+                    <span>DCDRUNet</span>
+                    <small className="pill-subtext">Deformable Conditioned HDR UNet</small>
                   </button>
                 </div>
               </div>

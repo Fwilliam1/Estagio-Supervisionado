@@ -11,7 +11,7 @@ from services.hdr_service import HDRService
 
 
 class HDRTestCase(TestCase):
-    """Testes de integracao para o servico HDR (HDRUNet e SAFHDR) e endpoints de processamento HDR."""
+    """Testes de integracao para o servico HDR (HDRUNet e DCDRUNet) e endpoints de processamento HDR."""
 
     def setUp(self):
         self.client = Client()
@@ -34,13 +34,13 @@ class HDRTestCase(TestCase):
         self.img.save(buffer, format='PNG')
         self.img_bytes = buffer.getvalue()
 
-    def test_servico_safhdr_dimensoes_padrao(self):
+    def test_servico_dcdrunet_dimensoes_padrao(self):
         resultado = HDRService.processar_imagem(self.img_bytes)
         self.assertEqual(resultado["largura_original"], 64)
         self.assertEqual(resultado["altura_original"], 64)
         self.assertEqual(resultado["largura_processada"], 64)
         self.assertEqual(resultado["altura_processada"], 64)
-        self.assertEqual(resultado["modelo"], "SAFHDR")
+        self.assertEqual(resultado["modelo"], "DCDRUNet")
         self.assertTrue(resultado["imagem_processada_base64"].startswith("data:image/png;base64,"))
         self.assertGreater(len(resultado["imagem_processada_bytes"]), 0)
         self.assertIn("imagem_tonemapped", resultado)
@@ -56,7 +56,7 @@ class HDRTestCase(TestCase):
         self.assertGreater(len(resultado["imagem_processada_bytes"]), 0)
         self.assertIn("imagem_tonemapped", resultado)
 
-    def test_servico_safhdr_dimensoes_impares_com_padding(self):
+    def test_servico_dcdrunet_dimensoes_impares_com_padding(self):
         # Testa resolucoes que causariam mismatch de tensores sem padding
         for width, height in [(65, 65), (71, 53), (100, 101)]:
             img_odd = Image.new('RGB', (width, height), color=(100, 120, 140))
@@ -100,7 +100,7 @@ class HDRTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "sucesso")
-        self.assertEqual(data["dados"]["modelo"], "SAFHDR")
+        self.assertEqual(data["dados"]["modelo"], "DCDRUNet")
         self.assertEqual(data["dados"]["largura_processada"], 64)
         self.assertEqual(data["dados"]["altura_processada"], 64)
         self.assertTrue(data["dados"]["imagem_base64"].startswith("data:image/"))
@@ -109,7 +109,7 @@ class HDRTestCase(TestCase):
         self.assertEqual(Imagem.objects.filter(usuario=self.usuario).count(), 1)
         img_db = Imagem.objects.first()
         self.assertEqual(img_db.nomeArquivo, "teste_hdr_foto.png")
-        self.assertIn("SAFHDR", img_db.algoritmo.tipo)
+        self.assertIn("DCDRUNet", img_db.algoritmo.tipo)
         self.assertIsNotNone(img_db.dadosProcessada)
 
     def test_endpoint_hdr_hdrunet_com_token_multipart_sucesso(self):
@@ -149,7 +149,7 @@ class HDRTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "sucesso")
-        self.assertEqual(data["dados"]["modelo"], "SAFHDR")
+        self.assertEqual(data["dados"]["modelo"], "DCDRUNet")
         self.assertTrue(data["dados"]["imagem_base64"].startswith("data:image/"))
 
     def test_salvar_imagem_historico_com_hdr(self):
@@ -175,4 +175,16 @@ class HDRTestCase(TestCase):
         self.assertIn("db_id", data["item"])
 
         img_db = Imagem.objects.get(id=data["item"]["db_id"])
-        self.assertIn("SAFHDR", img_db.algoritmo.tipo)
+        self.assertIn("DCDRUNet", img_db.algoritmo.tipo)
+
+        # Verifica que a listagem do historico retorna DCDRUNet corretamente como HDR
+        hist_response = self.client.get('/api/imagens/historico/?email=hdr_test@dsr.com')
+        self.assertEqual(hist_response.status_code, 200)
+        hist_data = hist_response.json()
+        self.assertTrue(hist_data["success"])
+        self.assertEqual(len(hist_data["history"]), 1)
+        item = hist_data["history"][0]
+        self.assertEqual(item["process"], "hdr")
+        self.assertEqual(item["hdrModel"], "DCDRUNet")
+        self.assertEqual(item["model"], "DCDRUNet")
+        self.assertEqual(item["processLabel"], "HDR (DCDRUNet - Reinhard)")

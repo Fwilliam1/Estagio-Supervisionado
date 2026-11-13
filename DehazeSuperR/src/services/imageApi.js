@@ -95,7 +95,7 @@ export const imageApi = {
    * Executa a inferência ou processamento de HDR no backend.
    * @param {File} imageFile - Arquivo de imagem enviado pelo usuário.
    * @param {string} toneMapping - Tipo de tone mapping ('Reinhard', 'Drago', 'Mantiuk', 'Logarítmico').
-   * @param {string} model - Arquitetura de rede ('HDRUNet' ou 'SAFHDR').
+   * @param {string} model - Arquitetura de rede ('HDRUNet' ou 'DCDRUNet').
    * @returns {Promise<Object>} Resultado do processamento com imagem Base64 e metadados.
    */
   async processHdr(imageFile, toneMapping = 'Reinhard', model = 'HDRUNet') {

@@ -20,7 +20,7 @@ backend_dir = str(Path(__file__).resolve().parent.parent)
 if backend_dir not in sys.path:
     sys.path.append(backend_dir)
 
-from archs.safhdr.SAFHDR import HDRUNet as SAFHDR
+from archs.dcdrunet.UNet_arch import HDRUNet as DCDRUNet
 from archs.hdrunet.UNet_arch import HDRUNet
 
 
@@ -130,10 +130,10 @@ class HDRService:
 
     @classmethod
     def normalizar_nome_modelo(cls, model_name: Optional[str]) -> str:
-        """Normaliza o nome do modelo para 'HDRUNet' ou 'SAFHDR'."""
+        """Normaliza o nome do modelo para 'HDRUNet' ou 'DCDRUNet'."""
         nome = str(model_name or 'HDRUNet').strip().upper()
-        if 'SAF' in nome:
-            return 'SAFHDR'
+        if 'DCDR' in nome:
+            return 'DCDRUNet'
         return 'HDRUNet'
 
     @classmethod
@@ -158,16 +158,16 @@ class HDRService:
                             status_code=500
                         )
             else:
-                instancia = SAFHDR().to(device)
-                caminho_peso = base_dir / "pretrained_models" / "model_tm_406392_G.pth"
+                instancia = DCDRUNet().to(device)
+                caminho_peso = base_dir / "pretrained_models" / "latest_G_dcdr_alpha001.pth"
                 if not caminho_peso.exists():
-                    fallback = Path(r".\backend\pretrained_models\model_tm_406392_G.pth")
+                    fallback = Path(r".\backend\pretrained_models\latest_G_dcdr_alpha001.pth")
                     if fallback.exists():
                         caminho_peso = fallback
                     else:
                         raise ServiceException(
-                            f"Pesos do modelo SAFHDR não encontrados em: {caminho_peso}. "
-                            "Certifique-se de que o arquivo 'model_tm_406392_G.pth' está na pasta 'backend/pretrained_models/'.",
+                            f"Pesos do modelo DCDRUNet não encontrados em: {caminho_peso}. "
+                            "Certifique-se de que o arquivo 'latest_G_dcdr_alpha001.pth' está na pasta 'backend/pretrained_models/'.",
                             status_code=500
                         )
 
@@ -195,7 +195,7 @@ class HDRService:
     @classmethod
     @property
     def model(cls):
-        return cls._models.get('SAFHDR') or cls._models.get('HDRUNet')
+        return cls._models.get('DCDRUNet') or cls._models.get('HDRUNet')
 
     @classmethod
     def _pre_processar_hdr(cls, hdr_tensor: torch.Tensor) -> np.ndarray:
@@ -335,10 +335,10 @@ class HDRService:
         clip_limit: float = 2.5,
         tile_grid_size: int = 8,
         tone_mapping: str = 'reinhard',
-        model_name: str = 'SAFHDR'
+        model_name: str = 'DCDRUNet'
     ) -> Dict[str, Any]:
         """
-        Processa os bytes da imagem aplicando algoritmo HDR (HDRUNet ou SAFHDR), passando pelo modelo
+        Processa os bytes da imagem aplicando algoritmo HDR (HDRUNet ou DCDRUNet), passando pelo modelo
         e aplicando um dos 4 operadores de tone mapping (Reinhard, Drago, Mantiuk, Logarítmico).
         Garante padding para que qualquer dimensão de imagem seja processada sem incompatibilidade de tensores.
         """
@@ -376,10 +376,7 @@ class HDRService:
 
         # 4. Passa pelo modelo inferindo sem gradiente
         with torch.no_grad():
-            if modelo_norm == 'HDRUNet':
-                output_padded = modelo_instancia((padded_input, padded_input.clone()))
-            else:
-                output_padded = modelo_instancia(padded_input)
+            output_padded = modelo_instancia((padded_input, padded_input.clone()))
 
         # Corta o padding excedente para retornar o tamanho original exato
         output = output_padded[:, :, :orig_h, :orig_w]

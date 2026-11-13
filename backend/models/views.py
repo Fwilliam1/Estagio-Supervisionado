@@ -213,10 +213,14 @@ def historico_api(request):
                 'dmnet' in algo_tipo_raw.lower() or
                 'esc' in algo_tipo_raw.lower()
             )
-            is_hdr = 'hdr' in algo_tipo_raw.lower()
+            is_hdr = (
+                'hdr' in algo_tipo_raw.lower() or
+                'dcdrunet' in algo_tipo_raw.lower() or
+                'tonemapping' in algo_tipo_raw.lower()
+            )
             dehazing_model = 'ConvIR' if 'convir' in algo_tipo_raw.lower() else 'UDPNet'
 
-            hdr_model = 'SAFHDR' if 'safhdr' in algo_tipo_raw.lower() else 'HDRUNet'
+            hdr_model = 'DCDRUNet' if 'dcdr' in algo_tipo_raw.lower() else 'HDRUNet'
             tone_mapping_val = 'Reinhard'
             if is_hdr:
                 if 'drago' in algo_tipo_raw.lower():
@@ -230,9 +234,9 @@ def historico_api(request):
                     try:
                         p = json.loads(algo_params_raw)
                         if 'modelo_hdr' in p:
-                            hdr_model = 'SAFHDR' if 'safhdr' in str(p['modelo_hdr']).lower() else 'HDRUNet'
-                        elif 'modelo' in p and str(p['modelo']).upper() in ('HDRUNET', 'SAFHDR'):
-                            hdr_model = 'SAFHDR' if 'safhdr' in str(p['modelo']).lower() else 'HDRUNet'
+                            hdr_model = 'DCDRUNet' if 'dcdr' in str(p['modelo_hdr']).lower() else 'HDRUNet'
+                        elif 'modelo' in p and str(p['modelo']).upper() in ('HDRUNET', 'DCDRUNET'):
+                            hdr_model = 'DCDRUNet' if 'dcdr' in str(p['modelo']).lower() else 'HDRUNet'
                         if 'tone_mapping' in p:
                             tone_mapping_val = p['tone_mapping']
                     except Exception:
@@ -346,7 +350,7 @@ def salvar_imagem_api(request):
             'dmnet' in str(process_type).lower() or
             'esc' in str(process_type).lower()
         )
-        is_hdr = 'hdr' in str(process_type).lower()
+        is_hdr = 'hdr' in str(process_type).lower() or 'dcdrunet' in str(process_type).lower()
         modelo_req = data.get('model') or data.get('modelo') or ('ESC' if 'esc' in str(process_type).lower() else 'DMNet')
         modelo_display = 'ESC' if 'esc' in str(modelo_req).lower() else 'DMNet'
 
@@ -355,11 +359,11 @@ def salvar_imagem_api(request):
             pesos_nome = f"DMNet_X{scale}.pth" if modelo_display == 'DMNet' else f"ESC_DIV2K_X{scale}.pth"
             params_algo = json.dumps({"modelo": modelo_display, "escala": scale, "pesos": pesos_nome})
         elif is_hdr:
-            hdr_model_req = data.get('hdrModel') or data.get('modelo_hdr') or data.get('model') or data.get('modelo') or 'SAFHDR'
-            hdr_model_display = 'HDRUNet' if 'hdrunet' in str(hdr_model_req).lower() else 'SAFHDR'
+            hdr_model_req = data.get('hdrModel') or data.get('modelo_hdr') or data.get('model') or data.get('modelo') or 'DCDRUNet'
+            hdr_model_display = 'HDRUNet' if 'hdrunet' in str(hdr_model_req).lower() else 'DCDRUNet'
             tone_mapping_req = data.get('toneMapping') or data.get('tone_mapping') or data.get('tonemap') or 'Reinhard'
             tipo_algo = f"{hdr_model_display}_{tone_mapping_req}_ToneMapping"
-            pesos_nome = "pretrained_model.pth" if hdr_model_display == "HDRUNet" else "model_tm_406392_G.pth"
+            pesos_nome = "pretrained_model.pth" if hdr_model_display == "HDRUNet" else "latest_G_dcdr_alpha001.pth"
             params_algo = json.dumps({"modelo": hdr_model_display, "modelo_hdr": hdr_model_display, "pesos": pesos_nome, "tone_mapping": tone_mapping_req, "mu_law": 5000.0})
         else:
             tipo_algo = "dehazing"

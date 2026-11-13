@@ -42,14 +42,6 @@ const COMPARISON_METHODS = [
     leftLabel: 'Baixa Faixa Dinâmica (LDR)',
     rightLabel: 'Reconstrução HDR (HDRUNet + Reinhard)',
   },
-  {
-    id: 'SAFHDR',
-    name: 'SAFHDR',
-    left: '/static/images/0888_medium.png',
-    right: '/static/images/0888_medium_hdr_safhdr_reinhard.png',
-    leftLabel: 'Baixa Faixa Dinâmica (LDR)',
-    rightLabel: 'Reconstrução HDR (SAFHDR + Reinhard)',
-  },
 ];
 
 const ARCHITECTURE_SLIDES = [
@@ -72,10 +64,6 @@ const ARCHITECTURE_SLIDES = [
   {
     img: '/static/images/Network_Structure.png',
     title: 'Reconstrução HDR - HDRUNet: Single Image HDR Reconstruction with Denoising and Dequantization.',
-  },
-  {
-    img: '/static/images/arquitetura_safhdr_2026_page-0001.jpg',
-    title: 'Reconstrução HDR - SAFHDR: Single Attention Feature for HDR.',
   },
 ];
 

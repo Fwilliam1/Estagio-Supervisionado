@@ -191,7 +191,9 @@ export async function saveHistoryItem(userEmail, item) {
 
   const isHdr =
     item.process === 'hdr' ||
-    String(item.process || '').toLowerCase().includes('hdr')
+    String(item.process || '').toLowerCase().includes('hdr') ||
+    String(item.process || '').toLowerCase().includes('dcdrunet') ||
+    String(item.process || '').toLowerCase().includes('tonemapping')
 
   const isDehazing = !isSR && !isHdr
 
@@ -200,8 +202,8 @@ export async function saveHistoryItem(userEmail, item) {
   const model = item.model || (rawDesc.includes('esc') ? 'ESC' : 'DMNet')
   const dehazingModel = item.dehazingModel || (rawDesc.includes('convir') ? 'ConvIR' : (item.model === 'ConvIR' ? 'ConvIR' : 'UDPNet'))
   const hdrModel = item.hdrModel || (
-    rawDesc.includes('safhdr') || String(item.model || '').toUpperCase() === 'SAFHDR'
-      ? 'SAFHDR'
+    rawDesc.includes('dcdrunet') || rawDesc.includes('dcdr') || String(item.model || '').toUpperCase() === 'DCDRUNET'
+      ? 'DCDRUNet'
       : 'HDRUNet'
   )
   const toneMapping = item.toneMapping || (
