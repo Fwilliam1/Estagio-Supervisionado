@@ -47,8 +47,8 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
                 modelo = 'udpnet'
             elif 'esc' in tipo_algoritmo.lower():
                 modelo = 'ESC'
-            elif tipo_algoritmo.lower() in ('hdr', 'safhdr', 'pshdr'):
-                modelo = 'PSHDR' if 'pshdr' in tipo_algoritmo.lower() else 'SAFHDR'
+            elif tipo_algoritmo.lower() in ('hdr', 'safhdr', 'hdrunet'):
+                modelo = 'HDRUNet' if 'hdrunet' in tipo_algoritmo.lower() else 'SAFHDR'
             else:
                 modelo = 'DMNet'
         else:
@@ -58,8 +58,8 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
             request.POST.get('modelo_hdr') or
             request.POST.get('model_hdr') or
             request.POST.get('hdr_model') or
-            (modelo if str(modelo).upper() in ('PSHDR', 'SAFHDR') else None) or
-            ('PSHDR' if 'pshdr' in tipo_algoritmo.lower() else 'SAFHDR')
+            (modelo if str(modelo).upper() in ('HDRUNET', 'SAFHDR') else None) or
+            ('HDRUNet' if 'hdrunet' in tipo_algoritmo.lower() else 'SAFHDR')
         )
 
         tone_mapping = (
@@ -113,8 +113,8 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
                         modelo = 'udpnet'
                     elif 'esc' in tipo_algoritmo.lower():
                         modelo = 'ESC'
-                    elif tipo_algoritmo.lower() in ('hdr', 'safhdr', 'pshdr'):
-                        modelo = 'PSHDR' if 'pshdr' in tipo_algoritmo.lower() else 'SAFHDR'
+                    elif tipo_algoritmo.lower() in ('hdr', 'safhdr', 'hdrunet'):
+                        modelo = 'HDRUNet' if 'hdrunet' in tipo_algoritmo.lower() else 'SAFHDR'
                     else:
                         modelo = 'DMNet'
                 else:
@@ -124,8 +124,8 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
                     body.get('modelo_hdr') or
                     body.get('model_hdr') or
                     body.get('hdr_model') or
-                    (modelo if str(modelo).upper() in ('PSHDR', 'SAFHDR') else None) or
-                    ('PSHDR' if 'pshdr' in tipo_algoritmo.lower() else 'SAFHDR')
+                    (modelo if str(modelo).upper() in ('HDRUNET', 'SAFHDR') else None) or
+                    ('HDRUNet' if 'hdrunet' in tipo_algoritmo.lower() else 'SAFHDR')
                 )
 
                 tone_mapping = (
@@ -167,7 +167,7 @@ def _extrair_imagem_e_parametros(request: HttpRequest) -> Tuple[bytes, str, int,
 def processamento_router_view(request: HttpRequest) -> JsonResponse:
     """
     Roteador genérico para processamento de imagem (/api/processar/).
-    Encaminha para Dehazing (Depth Anything V2 + UDPNet FSNet OTS ou ConvIR), Depth, Super-Resolução (DMNet ou ESC) ou HDR (PSHDR ou SAFHDR).
+    Encaminha para Dehazing (Depth Anything V2 + UDPNet FSNet OTS ou ConvIR), Depth, Super-Resolução (DMNet ou ESC) ou HDR (HDRUNet ou SAFHDR).
     """
     if request.method != 'POST':
         return JsonResponse({
@@ -184,9 +184,9 @@ def processamento_router_view(request: HttpRequest) -> JsonResponse:
             return _executar_dehazing(request, image_bytes, nome_arquivo, opcoes)
         elif tipo_algoritmo.lower() in ('depth', 'profundidade', 'depth-anything'):
             return _executar_depth(request, image_bytes, nome_arquivo, opcoes)
-        elif tipo_algoritmo.lower() in ('hdr', 'safhdr', 'pshdr'):
-            if 'pshdr' in tipo_algoritmo.lower():
-                opcoes['modelo_hdr'] = 'PSHDR'
+        elif tipo_algoritmo.lower() in ('hdr', 'safhdr', 'hdrunet'):
+            if 'hdrunet' in tipo_algoritmo.lower():
+                opcoes['modelo_hdr'] = 'HDRUNet'
             return _executar_hdr(request, image_bytes, nome_arquivo, opcoes)
         else:
             return _executar_super_resolution(request, image_bytes, nome_arquivo, escala, opcoes.get('modelo', 'DMNet'))
@@ -500,7 +500,6 @@ def _executar_depth(request: HttpRequest, image_bytes: bytes, nome_arquivo: str,
     }, status=200)
 
 
-
 @csrf_exempt
 @requer_autenticacao
 def download_imagem_view(request: HttpRequest, imagem_id: int) -> HttpResponse:
@@ -528,16 +527,11 @@ def download_imagem_view(request: HttpRequest, imagem_id: int) -> HttpResponse:
     return response
 
 
-
-
-
-from services.hdr_service import HDRService
-
 @csrf_exempt
 @requer_autenticacao
 def hdr_view(request: HttpRequest) -> JsonResponse:
     """
-    Endpoint para processamento HDR e Tone Mapping (SAFHDR).
+    Endpoint para processamento HDR e Tone Mapping (HDRUNet ou SAFHDR).
     POST /api/processar/hdr/
     """
     if request.method != 'POST':
@@ -574,7 +568,7 @@ def _executar_hdr(request: HttpRequest, image_bytes: bytes, nome_arquivo: str, o
         opcoes.get('model') or
         'SAFHDR'
     )
-    modelo_hdr = 'PSHDR' if 'pshdr' in str(modelo_raw).lower() else 'SAFHDR'
+    modelo_hdr = 'HDRUNet' if 'hdrunet' in str(modelo_raw).lower() else 'SAFHDR'
 
     # Chama o serviço
     resultado = HDRService.processar_imagem(
@@ -590,7 +584,7 @@ def _executar_hdr(request: HttpRequest, image_bytes: bytes, nome_arquivo: str, o
 
     # Configuração dos metadados para salvar no banco
     tipo_algoritmo_str = f"{modelo_aplicado}_{tm_aplicado}_ToneMapping"
-    pesos_nome = "PSHDR_G.pth" if modelo_aplicado == "PSHDR" else "model_tm_406392_G.pth"
+    pesos_nome = "pretrained_model.pth" if modelo_aplicado == "HDRUNet" else "model_tm_406392_G.pth"
     algoritmo_params = {
         "modelo": modelo_aplicado,
         "modelo_hdr": modelo_aplicado,

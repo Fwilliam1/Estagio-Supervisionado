@@ -68,10 +68,10 @@ export default function Home({
     return 'Reinhard'
   })
   const [selectedHdrModel, setSelectedHdrModel] = useState(() => {
-    if (pendingHistoryItem?.hdrModel && ['SAFHDR', 'PSHDR'].includes(pendingHistoryItem.hdrModel)) {
+    if (pendingHistoryItem?.hdrModel && ['SAFHDR', 'HDRUNet'].includes(pendingHistoryItem.hdrModel)) {
       return pendingHistoryItem.hdrModel
     }
-    if (pendingHistoryItem?.model && ['SAFHDR', 'PSHDR'].includes(pendingHistoryItem.model)) {
+    if (pendingHistoryItem?.model && ['SAFHDR', 'HDRUNet'].includes(pendingHistoryItem.model)) {
       return pendingHistoryItem.model
     }
     const raw = (
@@ -82,8 +82,8 @@ export default function Home({
       String(pendingHistoryItem?.model || '')
     ).toLowerCase()
     if (raw.includes('safhdr')) return 'SAFHDR'
-    if (raw.includes('pshdr')) return 'PSHDR'
-    return 'PSHDR'
+    if (raw.includes('hdrunet')) return 'HDRUNet'
+    return 'HDRUNet'
   })
   const [scaleFactor, setScaleFactor] = useState(() => {
     if (pendingHistoryItem?.scale) return Number(pendingHistoryItem.scale)
@@ -166,7 +166,6 @@ export default function Home({
       const activeUser = currentUserRef.current || currentUser || authApi.getCurrentUser()
       const currentMeta = fileMeta || selectedFileRef.current
       const token = authApi.getToken()
-
 
       let resultDataUrl = null
       let imgWidth = 800
@@ -420,15 +419,15 @@ export default function Home({
         toneMapping = 'Logarítmico'
       }
 
-      let hdrModel = 'PSHDR'
-      if (pendingHistoryItem.hdrModel && ['SAFHDR', 'PSHDR'].includes(pendingHistoryItem.hdrModel)) {
+      let hdrModel = 'HDRUNet'
+      if (pendingHistoryItem.hdrModel && ['SAFHDR', 'HDRUNet'].includes(pendingHistoryItem.hdrModel)) {
         hdrModel = pendingHistoryItem.hdrModel
-      } else if (pendingHistoryItem.model && ['SAFHDR', 'PSHDR'].includes(pendingHistoryItem.model)) {
+      } else if (pendingHistoryItem.model && ['SAFHDR', 'HDRUNet'].includes(pendingHistoryItem.model)) {
         hdrModel = pendingHistoryItem.model
       } else if (rawProcess.includes('safhdr') || rawLabel.includes('safhdr')) {
         hdrModel = 'SAFHDR'
-      } else if (rawProcess.includes('pshdr') || rawLabel.includes('pshdr')) {
-        hdrModel = 'PSHDR'
+      } else if (rawProcess.includes('hdrunet') || rawLabel.includes('hdrunet')) {
+        hdrModel = 'HDRUNet'
       }
 
       let scale = 2
@@ -620,8 +619,6 @@ export default function Home({
       setIsProcessing(false)
     }
   }
-
-
 
   const downloadProcessedImage = () => {
     if (!processedImageUrl) return
@@ -1054,22 +1051,22 @@ export default function Home({
             <div className="sr-options-container">
               <div className="scale-selector-wrapper">
                 <div className="scale-selector-title">
-                  <span className="label">RedeNeural/Arquitetura</span>
+                  <span className="label">Rede Neural / Arquitetura</span>
                   <span className="desc">Selecione a rede neural profunda para síntese de HDR:</span>
                 </div>
                 <div className="scale-options-pills model-selector-pills">
                   <button
                     type="button"
-                    className={`scale-pill-btn model-pill-btn ${selectedHdrModel === 'PSHDR' ? 'active' : ''}`}
+                    className={`scale-pill-btn model-pill-btn ${selectedHdrModel === 'HDRUNet' ? 'active' : ''}`}
                     onClick={() => {
-                      setSelectedHdrModel('PSHDR')
+                      setSelectedHdrModel('HDRUNet')
                       setProcessedImageUrl(null)
                       setProcessMeta(null)
                     }}
                     disabled={isProcessing}
                   >
-                    <span>PSHDR</span>
-                    <small className="pill-subtext">Pavic Single HDR</small>
+                    <span>HDRUNet</span>
+                    <small className="pill-subtext">Single Image HDR Reconstruction</small>
                   </button>
                   <button
                     type="button"

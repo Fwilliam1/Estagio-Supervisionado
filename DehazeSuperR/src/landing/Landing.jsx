@@ -35,12 +35,12 @@ const COMPARISON_METHODS = [
     rightLabel: 'Super-Resolução X4 (ESC)',
   },
   {
-    id: 'PSHDR',
-    name: 'PSHDR',
+    id: 'HDRUNet',
+    name: 'HDRUNet',
     left: '/static/images/0212_medium.png',
-    right: '/static/images/0212_medium_hdr_pshdr_reinhard.png',
+    right: '/static/images/0212_medium_hdr_hdrunet_reinhard.png',
     leftLabel: 'Baixa Faixa Dinâmica (LDR)',
-    rightLabel: 'Reconstrução HDR (PSHDR + Reinhard)',
+    rightLabel: 'Reconstrução HDR (HDRUNet + Reinhard)',
   },
   {
     id: 'SAFHDR',
@@ -70,12 +70,12 @@ const ARCHITECTURE_SLIDES = [
     title: 'Super-Resolução - ESC: Emulate Self-Attention with Convolution.',
   },
   {
-    img: '/static/images/arquitetura_pshdr_2025_page-0001.jpg',
-    title: 'Recosntrução HDR - PSHDR: Pavic Single HDR.',
+    img: '/static/images/Network_Structure.png',
+    title: 'Reconstrução HDR - HDRUNet: Single Image HDR Reconstruction with Denoising and Dequantization.',
   },
   {
     img: '/static/images/arquitetura_safhdr_2026_page-0001.jpg',
-    title: 'Recosntrução HDR - SAFHDR: Single Attention Feature for HDR.',
+    title: 'Reconstrução HDR - SAFHDR: Single Attention Feature for HDR.',
   },
 ];
 

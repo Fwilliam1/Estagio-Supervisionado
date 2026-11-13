@@ -95,10 +95,10 @@ export const imageApi = {
    * Executa a inferência ou processamento de HDR no backend.
    * @param {File} imageFile - Arquivo de imagem enviado pelo usuário.
    * @param {string} toneMapping - Tipo de tone mapping ('Reinhard', 'Drago', 'Mantiuk', 'Logarítmico').
-   * @param {string} model - Arquitetura de rede ('PSHDR' ou 'SAFHDR').
+   * @param {string} model - Arquitetura de rede ('HDRUNet' ou 'SAFHDR').
    * @returns {Promise<Object>} Resultado do processamento com imagem Base64 e metadados.
    */
-  async processHdr(imageFile, toneMapping = 'Reinhard', model = 'PSHDR') {
+  async processHdr(imageFile, toneMapping = 'Reinhard', model = 'HDRUNet') {
     const token = localStorage.getItem('dsr_token')
     if (!token) {
       throw new Error('Usuário não autenticado. Por favor, realize login novamente.')
@@ -139,5 +139,3 @@ export const imageApi = {
     }
   },
 }
-
-

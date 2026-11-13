@@ -21,7 +21,7 @@ if backend_dir not in sys.path:
     sys.path.append(backend_dir)
 
 from archs.safhdr.SAFHDR import HDRUNet as SAFHDR
-from archs.pshdr.PSHDR import HDRUNet as PSHDR
+from archs.hdrunet.UNet_arch import HDRUNet
 
 
 class HdrService_VersãoFELIPEEEmanuel:
@@ -130,31 +130,31 @@ class HDRService:
 
     @classmethod
     def normalizar_nome_modelo(cls, model_name: Optional[str]) -> str:
-        """Normaliza o nome do modelo para 'PSHDR' ou 'SAFHDR'."""
-        nome = str(model_name or 'PSHDR').strip().upper()
+        """Normaliza o nome do modelo para 'HDRUNet' ou 'SAFHDR'."""
+        nome = str(model_name or 'HDRUNet').strip().upper()
         if 'SAF' in nome:
             return 'SAFHDR'
-        return 'PSHDR'
+        return 'HDRUNet'
 
     @classmethod
-    def _carregar_modelo(cls, model_name: str = 'PSHDR') -> nn.Module:
+    def _carregar_modelo(cls, model_name: str = 'HDRUNet') -> nn.Module:
         """Carrega o modelo e os pesos apenas se ainda não estiverem na memória (Lazy Loading)."""
         modelo_chave = cls.normalizar_nome_modelo(model_name)
         if modelo_chave not in cls._models or cls._models[modelo_chave] is None:
             device = cls.get_device()
             base_dir = Path(__file__).resolve().parent.parent
 
-            if modelo_chave == 'PSHDR':
-                instancia = PSHDR().to(device)
-                caminho_peso = base_dir / "pretrained_models" / "PSHDR_G.pth"
+            if modelo_chave == 'HDRUNet':
+                instancia = HDRUNet().to(device)
+                caminho_peso = base_dir / "pretrained_models" / "pretrained_model.pth"
                 if not caminho_peso.exists():
-                    fallback = Path(r".\backend\pretrained_models\PSHDR_G.pth")
+                    fallback = Path(r".\backend\pretrained_models\pretrained_model.pth")
                     if fallback.exists():
                         caminho_peso = fallback
                     else:
                         raise ServiceException(
-                            f"Pesos do modelo PSHDR não encontrados em: {caminho_peso}. "
-                            "Certifique-se de que o arquivo 'PSHDR_G.pth' está na pasta 'backend/pretrained_models/'.",
+                            f"Pesos do modelo HDRUNet não encontrados em: {caminho_peso}. "
+                            "Certifique-se de que o arquivo 'pretrained_model.pth' está na pasta 'backend/pretrained_models/'.",
                             status_code=500
                         )
             else:
@@ -173,12 +173,18 @@ class HDRService:
 
             state_dict = torch.load(str(caminho_peso), map_location=device, weights_only=True)
 
-            if 'params_ema' in state_dict:
-                instancia.load_state_dict(state_dict['params_ema'], strict=True)
-            elif 'params' in state_dict:
-                instancia.load_state_dict(state_dict['params'], strict=True)
+            if isinstance(state_dict, dict) and 'params_ema' in state_dict:
+                raw_dict = state_dict['params_ema']
+            elif isinstance(state_dict, dict) and 'params' in state_dict:
+                raw_dict = state_dict['params']
             else:
-                instancia.load_state_dict(state_dict, strict=True)
+                raw_dict = state_dict
+
+            clean_dict = {
+                (k[7:] if k.startswith('module.') else k): v
+                for k, v in raw_dict.items()
+            }
+            instancia.load_state_dict(clean_dict, strict=True)
 
             instancia.eval()
             cls._models[modelo_chave] = instancia
@@ -189,7 +195,7 @@ class HDRService:
     @classmethod
     @property
     def model(cls):
-        return cls._models.get('SAFHDR') or cls._models.get('PSHDR')
+        return cls._models.get('SAFHDR') or cls._models.get('HDRUNet')
 
     @classmethod
     def _pre_processar_hdr(cls, hdr_tensor: torch.Tensor) -> np.ndarray:
@@ -216,23 +222,23 @@ class HDRService:
 
     @classmethod
     def aplicar_tone_mapping_drago_cv2(
-        cls, 
-        hdr_tensor: torch.Tensor, 
-        gamma: float = 1.25, 
-        saturation: float = 0.9, 
+        cls,
+        hdr_tensor: torch.Tensor,
+        gamma: float = 1.25,
+        saturation: float = 0.9,
         bias: float = 0.85
     ) -> torch.Tensor:
         """
         Aplica o Tone Mapping de Drago (Adaptive Logarithmic Mapping) usando OpenCV.
-        - bias=0.85: Calibrado segundo a literatura de Drago et al. (2003) para evitar a 
+        - bias=0.85: Calibrado segundo a literatura de Drago et al. (2003) para evitar a
           compressão degenerada que estoura as altas luzes (comum com bias=1.0).
         - gamma=1.25: Proporciona contraste natural sem superexposição.
         - saturation=0.9: Evita distorções cromáticas em realces luminosos.
         """
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
         tonemap = cv2.createTonemapDrago(
-            gamma=gamma, 
-            saturation=saturation, 
+            gamma=gamma,
+            saturation=saturation,
             bias=bias
         )
         ldr_bgr = tonemap.process(hdr_bgr)
@@ -240,11 +246,11 @@ class HDRService:
 
     @classmethod
     def aplicar_tone_mapping_reinhard_cv2(
-        cls, 
-        hdr_tensor: torch.Tensor, 
-        gamma: float = 1.2, 
-        intensity: float = 0.0, 
-        light_adapt: float = 0.2, 
+        cls,
+        hdr_tensor: torch.Tensor,
+        gamma: float = 1.2,
+        intensity: float = 0.0,
+        light_adapt: float = 0.2,
         color_adapt: float = 0.5
     ) -> torch.Tensor:
         """
@@ -255,9 +261,9 @@ class HDRService:
         """
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
         tonemap = cv2.createTonemapReinhard(
-            gamma=gamma, 
-            intensity=intensity, 
-            light_adapt=light_adapt, 
+            gamma=gamma,
+            intensity=intensity,
+            light_adapt=light_adapt,
             color_adapt=color_adapt
         )
         ldr_bgr = tonemap.process(hdr_bgr)
@@ -265,10 +271,10 @@ class HDRService:
 
     @classmethod
     def aplicar_tone_mapping_mantiuk_cv2(
-        cls, 
-        hdr_tensor: torch.Tensor, 
-        gamma: float = 1.3, 
-        scale: float = 0.8, 
+        cls,
+        hdr_tensor: torch.Tensor,
+        gamma: float = 1.3,
+        scale: float = 0.8,
         saturation: float = 1.0
     ) -> torch.Tensor:
         """
@@ -278,8 +284,8 @@ class HDRService:
         """
         hdr_bgr = cls._pre_processar_hdr(hdr_tensor)
         tonemap = cv2.createTonemapMantiuk(
-            gamma=gamma, 
-            scale=scale, 
+            gamma=gamma,
+            scale=scale,
             saturation=saturation
         )
         ldr_bgr = tonemap.process(hdr_bgr)
@@ -287,8 +293,8 @@ class HDRService:
 
     @classmethod
     def aplicar_tone_mapping_logaritmico(
-        cls, 
-        hdr_tensor: torch.Tensor, 
+        cls,
+        hdr_tensor: torch.Tensor,
         mu: float = 20.0,
         white_point_quantile: float = 0.998
     ) -> torch.Tensor:
@@ -324,15 +330,15 @@ class HDRService:
 
     @classmethod
     def processar_imagem(
-        cls, 
-        image_bytes: bytes, 
-        clip_limit: float = 2.5, 
+        cls,
+        image_bytes: bytes,
+        clip_limit: float = 2.5,
         tile_grid_size: int = 8,
         tone_mapping: str = 'reinhard',
         model_name: str = 'SAFHDR'
     ) -> Dict[str, Any]:
         """
-        Processa os bytes da imagem aplicando algoritmo HDR (PSHDR ou SAFHDR), passando pelo modelo
+        Processa os bytes da imagem aplicando algoritmo HDR (HDRUNet ou SAFHDR), passando pelo modelo
         e aplicando um dos 4 operadores de tone mapping (Reinhard, Drago, Mantiuk, Logarítmico).
         Garante padding para que qualquer dimensão de imagem seja processada sem incompatibilidade de tensores.
         """
@@ -370,7 +376,10 @@ class HDRService:
 
         # 4. Passa pelo modelo inferindo sem gradiente
         with torch.no_grad():
-            output_padded = modelo_instancia(padded_input)
+            if modelo_norm == 'HDRUNet':
+                output_padded = modelo_instancia((padded_input, padded_input.clone()))
+            else:
+                output_padded = modelo_instancia(padded_input)
 
         # Corta o padding excedente para retornar o tamanho original exato
         output = output_padded[:, :, :orig_h, :orig_w]

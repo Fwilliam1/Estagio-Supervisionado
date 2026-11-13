@@ -171,7 +171,6 @@ export async function saveHistoryItem(userEmail, item) {
   const key = `${HISTORY_PREFIX}${email}`
   const currentList = getUserHistory(email)
 
-
   const now = new Date()
   const formattedDate = now.toLocaleDateString('pt-BR', {
     day: '2-digit',
@@ -203,7 +202,7 @@ export async function saveHistoryItem(userEmail, item) {
   const hdrModel = item.hdrModel || (
     rawDesc.includes('safhdr') || String(item.model || '').toUpperCase() === 'SAFHDR'
       ? 'SAFHDR'
-      : (rawDesc.includes('pshdr') || String(item.model || '').toUpperCase() === 'PSHDR' ? 'PSHDR' : 'PSHDR')
+      : 'HDRUNet'
   )
   const toneMapping = item.toneMapping || (
     rawDesc.includes('drago') ? 'Drago' :

@@ -11,7 +11,7 @@ from services.hdr_service import HDRService
 
 
 class HDRTestCase(TestCase):
-    """Testes de integracao para o servico SAFHDR e endpoints de processamento HDR."""
+    """Testes de integracao para o servico HDR (HDRUNet e SAFHDR) e endpoints de processamento HDR."""
 
     def setUp(self):
         self.client = Client()
@@ -45,6 +45,17 @@ class HDRTestCase(TestCase):
         self.assertGreater(len(resultado["imagem_processada_bytes"]), 0)
         self.assertIn("imagem_tonemapped", resultado)
 
+    def test_servico_hdrunet_dimensoes_padrao(self):
+        resultado = HDRService.processar_imagem(self.img_bytes, model_name="HDRUNet")
+        self.assertEqual(resultado["largura_original"], 64)
+        self.assertEqual(resultado["altura_original"], 64)
+        self.assertEqual(resultado["largura_processada"], 64)
+        self.assertEqual(resultado["altura_processada"], 64)
+        self.assertEqual(resultado["modelo"], "HDRUNet")
+        self.assertTrue(resultado["imagem_processada_base64"].startswith("data:image/png;base64,"))
+        self.assertGreater(len(resultado["imagem_processada_bytes"]), 0)
+        self.assertIn("imagem_tonemapped", resultado)
+
     def test_servico_safhdr_dimensoes_impares_com_padding(self):
         # Testa resolucoes que causariam mismatch de tensores sem padding
         for width, height in [(65, 65), (71, 53), (100, 101)]:
@@ -54,6 +65,17 @@ class HDRTestCase(TestCase):
             resultado = HDRService.processar_imagem(buf.getvalue())
             self.assertEqual(resultado["largura_processada"], width)
             self.assertEqual(resultado["altura_processada"], height)
+            self.assertTrue(resultado["imagem_processada_base64"].startswith("data:image/png;base64,"))
+
+    def test_servico_hdrunet_dimensoes_impares_com_padding(self):
+        for width, height in [(65, 65), (71, 53), (100, 101)]:
+            img_odd = Image.new('RGB', (width, height), color=(100, 120, 140))
+            buf = io.BytesIO()
+            img_odd.save(buf, format='PNG')
+            resultado = HDRService.processar_imagem(buf.getvalue(), model_name="HDRUNet")
+            self.assertEqual(resultado["largura_processada"], width)
+            self.assertEqual(resultado["altura_processada"], height)
+            self.assertEqual(resultado["modelo"], "HDRUNet")
             self.assertTrue(resultado["imagem_processada_base64"].startswith("data:image/png;base64,"))
 
     def test_endpoint_hdr_sem_token_retorna_401(self):
@@ -88,6 +110,30 @@ class HDRTestCase(TestCase):
         img_db = Imagem.objects.first()
         self.assertEqual(img_db.nomeArquivo, "teste_hdr_foto.png")
         self.assertIn("SAFHDR", img_db.algoritmo.tipo)
+        self.assertIsNotNone(img_db.dadosProcessada)
+
+    def test_endpoint_hdr_hdrunet_com_token_multipart_sucesso(self):
+        upload_file = io.BytesIO(self.img_bytes)
+        upload_file.name = "teste_hdrunet_foto.png"
+
+        response = self.client.post(
+            '/api/processar/hdr/',
+            {'imagem': upload_file, 'algoritmo': 'hdr', 'modelo_hdr': 'HDRUNet'},
+            **self.auth_headers
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "sucesso")
+        self.assertEqual(data["dados"]["modelo"], "HDRUNet")
+        self.assertEqual(data["dados"]["largura_processada"], 64)
+        self.assertEqual(data["dados"]["altura_processada"], 64)
+        self.assertTrue(data["dados"]["imagem_base64"].startswith("data:image/"))
+
+        self.assertEqual(Imagem.objects.filter(usuario=self.usuario).count(), 1)
+        img_db = Imagem.objects.first()
+        self.assertEqual(img_db.nomeArquivo, "teste_hdrunet_foto.png")
+        self.assertIn("HDRUNet", img_db.algoritmo.tipo)
         self.assertIsNotNone(img_db.dadosProcessada)
 
     def test_endpoint_processar_router_com_hdr_sucesso(self):
